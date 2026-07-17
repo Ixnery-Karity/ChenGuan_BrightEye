@@ -1,0 +1,11 @@
+# —— 公开仓库只包含 brighteye 软件代码 ——
+# 竞赛文档（商业计划书/金融分析/问卷/路演等）与演示打包不上传
+/*
+!/.gitignore
+!/brighteye/
+
+# 运行时产物
+brighteye/**/__pycache__/
+brighteye/data/
+brighteye/reports/
+*.pyc

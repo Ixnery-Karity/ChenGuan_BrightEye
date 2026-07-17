@@ -1,0 +1,110 @@
+桌宠「文乃」galgame 立绘 · AI 出图提示词（差分动作版）
+================================================================
+用途：给 AI 绘图工具出 6 张「同一个角色、不同表情+动作」的透明 PNG 立绘，
+      放进本文件夹后程序自动接入（路线 B）。画风＝galgame / 视觉小说立绘
+      （平涂赛璐璐上色、动漫脸、正面全身），不是像素风。
+
+【核心原则：差分一致性】
+  galgame 立绘的命门是「同一个人」——6 张图必须脸型、发型、配色、画风完全一致，
+  只换【表情】和【动作姿势】。做法：
+    1) 先只用下面【固定基底】出 1 张「日常 idle」，反复刷到满意 = 你的"母版"。
+    2) 其余 5 张：用母版做「图生图 / 参考图(img2img / reference)」，
+       基底原封不动，只替换 ★表情行★ 和 ★动作行★。
+    3) 全程锁定同一个随机种子(seed)或同一参考图，一致性最好。
+  ——这正是不同「担心程度」对应不同「动作」的来源（立绘动作差分）。
+
+【通用尺寸/格式要求（每张都加）】
+  full body, standing, front view, looking at viewer, single character,
+  transparent background, clean lineart, flat cel shading, no extra outline,
+  high resolution, best quality, masterpiece
+  （出图后若不是透明底，用抠图工具去背；高度建议 ≥ 800px，程序会自适应缩放）
+
+================================================================
+【固定基底】（每张提示词都以这段开头，不要改）
+----------------------------------------------------------------
+visual novel tachie, 1girl, chibi-leaning cute anime girl, dark honey-gold
+long hair in twin-tails, dark red ribbon bows on both sides, small black
+cross hairpin, big emerald-green tsundere sharp eyes, light blush, one small
+fang, white short-sleeve blouse with black necktie, wine-red suspender dress
+with gold double-breasted buttons and white hem trim, black thigh-high
+stockings, black mary-jane shoes,
+----------------------------------------------------------------
+
+================================================================
+按「担心程度」从低到高，每个情绪一张图。
+★= 这一行决定差分，换图就只换这两类行。
+================================================================
+
+────────────────────────────────────────
+① wenna_idle.png ——【日常 / 待机】（必需，先做这张当母版）
+   担心程度：无 · 中性陪伴
+   ★表情：calm gentle smile, relaxed face, small fang showing
+   ★动作：standing naturally, arms relaxed at sides, slight head tilt
+   完整提示词 = 固定基底 + 上面两行 + 通用尺寸/格式要求
+
+────────────────────────────────────────
+② wenna_happy.png ——【满意 / 开心】（用眼习惯好，鼓励）
+   担心程度：无 · 表扬
+   ★表情：bright big smile, happy sparkling eyes, cheerful, fang showing
+   ★动作：both arms raised up cheering, or making a heart with hands,
+          energetic happy pose
+   完整提示词 = 固定基底 + 上面两行 + 通用尺寸/格式要求
+
+────────────────────────────────────────
+③ wenna_blink.png ——【眨眼帧】（待机眨眼动画用，可选）
+   担心程度：无 · 同 idle 仅闭眼
+   ★表情：eyes closed gently, same calm smile as idle
+   ★动作：standing naturally, arms relaxed at sides （与 idle 完全相同姿势）
+   说明：必须和 idle 同姿势同构图，只把眼睛闭上，否则眨眼会"跳"。
+
+────────────────────────────────────────
+④ wenna_pout.png ——【嘟嘴 / 轻度提醒】（出现轻微不良习惯）
+   担心程度：低 · 傲娇式提醒
+   ★表情：pouting, puffed cheeks, slightly annoyed but cute, blushing,
+          eyebrows slightly raised
+   ★动作：one hand on hip, other hand raised with index finger pointing up
+          (lecturing / reminding gesture)
+   完整提示词 = 固定基底 + 上面两行 + 通用尺寸/格式要求
+
+────────────────────────────────────────
+⑤ wenna_angry.png ——【生气 / 严厉警告】（持续不良用眼，严重度高）
+   担心程度：高 · 严肃警告
+   ★表情：angry frown, furrowed red-tinted eyebrows, scolding expression,
+          mouth open shouting a little, intense green eyes
+   ★动作：both hands firmly on hips (akimbo), leaning slightly forward,
+          assertive scolding pose
+   完整提示词 = 固定基底 + 上面两行 + 通用尺寸/格式要求
+
+────────────────────────────────────────
+⑥ wenna_sleepy.png ——【犯困 / 无人值守】（检测不到人脸 / 久坐疲劳）
+   担心程度：陪伴待机 · 困倦
+   ★表情：sleepy half-closed eyes, drowsy, faint yawn, tired but cute
+   ★动作：one hand rubbing one eye, other arm loose, slightly slouched,
+          small "Zzz" floating near head
+   完整提示词 = 固定基底 + 上面两行 + 通用尺寸/格式要求
+
+================================================================
+【负面提示词 Negative prompt（每张都建议加，提高质量与一致性）】
+  pixel art, mosaic, low-res, blurry, extra fingers, extra arms, extra legs,
+  deformed hands, bad anatomy, watermark, signature, text, multiple characters,
+  cropped, out of frame, opaque background, white box, harsh outline,
+  realistic photo, 3d render
+================================================================
+
+【推荐工具】
+  · 通用动漫大模型：NovelAI、Stable Diffusion(Anything/AnimagineXL 等动漫模型)、
+    国内：即梦/Liblib/吐司 等可选「动漫/二次元」模型。
+  · 立绘差分专用流水线：ComfyUI_VNCCS、TavernSprite（一张母版批量出多表情）。
+  · 出图后抠透明底：remove.bg / Photoroom / PS 魔棒。
+
+【文件名（必须完全一致，全小写，放进本文件夹）】
+  wenna_idle.png    必需（缺它整体回退手绘矢量形象）
+  wenna_happy.png   可选
+  wenna_blink.png   可选（缺则待机不眨眼）
+  wenna_pout.png    可选
+  wenna_angry.png   可选
+  wenna_sleepy.png  可选
+  只放 idle 一张也能跑；其余缺失的情绪会统一用 idle 帧代替。
+
+【合规】用「气质参考 + 原创化」的描述出图，避免 1:1 还原任何既有 IP；
+        角色名集中在 core/persona.py::PERSONA_NAME，正式版改一处即可替换为完全原创形象。

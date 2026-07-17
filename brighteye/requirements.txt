@@ -1,0 +1,35 @@
+# 宸观 BrightEye 运行依赖
+#
+# 基础演示（--simulate / GUI 仪表盘）：仅需 Python 3.9+ 标准库 + numpy，
+#   tkinter 随官方 CPython 一并安装，无需额外步骤。
+numpy>=1.23
+
+# —— 摄像头实时检测（眨眼/坐姿/距离）——
+# 已在 Python 3.14 + mediapipe 0.10.35 + opencv 4.13 实测可用。
+# mediapipe 0.10 起仅提供 Tasks API，需配套 .task 模型文件
+# （已随仓库放在 brighteye/assets/models/：
+#    face_landmarker.task、pose_landmarker_lite.task）。
+# 若缺失，可从 storage.googleapis.com/mediapipe-models/ 重新下载。
+opencv-python>=4.8
+mediapipe>=0.10
+
+# —— 大模型接入（完全可选，不装也能跑：聊天走离线脚本、复盘走规则建议）——
+# 本项目不引入 openai / requests 等 SDK，LLM 调用仅用标准库 urllib 完成，
+# 因此这里【没有】需要 pip 安装的新依赖。启用大模型二选一即可：
+#   A. 本地 Ollama：安装后 `ollama serve`，再
+#      `ollama pull qwen2.5:7b-instruct`（聊天）
+#      `ollama pull deepseek-r1:7b`（复盘分析）；
+#   B. 云端 OpenAI 兼容 API（含 DeepSeek 官方）：设环境变量
+#      BRIGHTEYE_LLM_BASE=https://api.deepseek.com/v1
+#      BRIGHTEYE_LLM_KEY=sk-xxxx
+# 详见 brighteye/docs/大模型接入与部署指南.md。
+#
+# —— 表情情绪分析 ——
+# 复用上面的 mediapipe FaceLandmarker（开启 blendshapes），无需新增依赖。
+#
+# —— v1.9.0 工程化能力（全部可选，不装不影响任何演示）——
+# 多进程视觉(--mp-vision)、游戏勿扰、多端同步(--sync)：纯标准库，零新增依赖。
+# 显示器物理亮度守护（DDC/CI，强制休息时调暗）：
+#   pip install monitorcontrol      # 可选；未安装自动降级 no-op
+# 一键打包（python -m brighteye.tools.build_exe）：
+#   pip install pyinstaller         # 仅打包机需要，运行时不需要

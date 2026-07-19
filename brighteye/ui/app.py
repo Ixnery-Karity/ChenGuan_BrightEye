@@ -1,7 +1,9 @@
-"""宸观 BrightEye 仪表盘（Tkinter · 电竞导播风 · 零额外依赖）。
+"""宸观 BrightEye 仪表盘（Tkinter · 双主题 · 零额外依赖）。
 
-设计语言：深黑底 + 高饱和撞色 + 粒子背景 + HUD 卡片发光，
-力求"广告动感 + 比赛导播丝滑科技感"，并降低 AI 感（撞色而非渐变蓝紫）。
+设计语言（v1.12.0 起随弥悠人设换代，配色 token 集中在 ui/theme.py）：
+  · 🌙 弥悠·星夜（默认）：午夜紫深底 + 发光描边 + 紫/青/粉高饱和撞色；
+  · 🍬 弥悠·奶糖：奶白粉紫浅底 + 糖果色卡片，可爱风；
+  顶栏 🎨 按钮一键切换，选择持久化到 data/ui_theme.json。
 
 与新系统的联动：
   - 顶部模式切换条（陪伴 / 严格 / 复盘 / 勿扰），点击即时切换；
@@ -20,22 +22,10 @@ from ..core.chat_engine import ChatEngine
 from ..core.health_report import save_report
 from ..core.modes import MODE_META, MODE_ORDER, Mode
 from ..core.monitor import Monitor
+from . import theme as theme_mod
 from .chat import ChatWindow
 from .particles import ParticleField
 from .pet import FloatingPet
-
-# —— 调色（取自 config 的电竞配色）——
-_BG = CONFIG.ui_bg
-_PANEL = CONFIG.ui_panel
-_PANEL2 = CONFIG.ui_panel2
-_TEAL = CONFIG.ui_teal
-_CYAN = CONFIG.ui_cyan
-_CORAL = CONFIG.ui_coral
-_AMBER = CONFIG.ui_amber
-_FG = CONFIG.ui_fg
-_MUTED = CONFIG.ui_muted
-
-_LEVEL_COLOR = {"info": _CYAN, "warn": _AMBER, "alert": _CORAL}
 
 # 情绪 → (粒子 rgb, 速度)
 _MOOD_FX = {
@@ -50,9 +40,13 @@ _MOOD_FX = {
 class DashboardApp:
     def __init__(self, monitor: Monitor):
         self.m = monitor
+        # —— 主题（双主题可切换，选择持久化）——
+        self._data_dir = getattr(CONFIG, "data_dir", "data")
+        self._theme_name = theme_mod.load_theme_name(self._data_dir)
+        self.T = theme_mod.get_theme(self._theme_name)
         self.root = tk.Tk()
         self.root.title(f"{CONFIG.app_name} · {CONFIG.subtitle}")
-        self.root.configure(bg=_BG)
+        self.root.configure(bg=self.T["bg"])
         self.root.geometry("900x640")
         self.root.minsize(820, 600)
 
@@ -98,7 +92,7 @@ class DashboardApp:
     # ---- 布局 --------------------------------------------------------
     def _build(self) -> None:
         # 全窗粒子背景画布
-        self.bg = tk.Canvas(self.root, bg=_BG, highlightthickness=0, bd=0)
+        self.bg = tk.Canvas(self.root, bg=self.T["bg"], highlightthickness=0, bd=0)
         self.bg.place(x=0, y=0, relwidth=1, relheight=1)
         self.pf = ParticleField(self.bg, 900, 640,
                                 count=CONFIG.ui_particle_count,
@@ -106,28 +100,34 @@ class DashboardApp:
         self.bg.bind("<Configure>", lambda e: self.pf.resize(e.width, e.height))
 
         # —— 顶部：LOGO + 数据源 ——
-        head = tk.Frame(self.bg, bg=_BG)
+        head = tk.Frame(self.bg, bg=self.T["bg"])
         head.place(relx=0.03, y=18, relwidth=0.94)
         tk.Label(head, text=CONFIG.app_name, font=self._f_logo,
-                 bg=_BG, fg=_FG).pack(side="left")
+                 bg=self.T["bg"], fg=self.T["fg"]).pack(side="left")
         tk.Label(head, text="  " + CONFIG.subtitle, font=self._f_sub,
-                 bg=_BG, fg=_TEAL).pack(side="left", pady=(10, 0))
+                 bg=self.T["bg"], fg=self.T["teal"]).pack(side="left", pady=(10, 0))
+        theme_btn = tk.Label(
+            head, text=f"🎨 {self.T['icon']} {self.T['label']}",
+            font=self._f_sub, bg=self.T["panel"], fg=self.T["teal"],
+            padx=10, pady=4, cursor="hand2")
+        theme_btn.pack(side="right", pady=(6, 0))
+        theme_btn.bind("<Button-1>", lambda e: self._toggle_theme())
         self.backend_lbl = tk.Label(head, text="", font=self._f_sub,
-                                    bg=_BG, fg=_MUTED)
-        self.backend_lbl.pack(side="right", pady=(10, 0))
+                                    bg=self.T["bg"], fg=self.T["muted"])
+        self.backend_lbl.pack(side="right", padx=(0, 12), pady=(10, 0))
 
         # —— 模式切换条 ——
-        modebar = tk.Frame(self.bg, bg=_BG)
+        modebar = tk.Frame(self.bg, bg=self.T["bg"])
         modebar.place(relx=0.03, y=64, relwidth=0.94)
         for m in MODE_ORDER:
             name, icon, _desc = MODE_META[m]
             b = tk.Label(modebar, text=f" {icon} {name} ", font=self._f_chip,
-                         bg=_PANEL, fg=_MUTED, padx=10, pady=6, cursor="hand2")
+                         bg=self.T["panel"], fg=self.T["muted"], padx=10, pady=6, cursor="hand2")
             b.pack(side="left", padx=(0, 8))
             b.bind("<Button-1>", lambda e, k=m.value: self._switch_mode(k))
             self._mode_btns[m.value] = b
         self.mode_desc = tk.Label(modebar, text="", font=self._f_sub,
-                                  bg=_BG, fg=_MUTED)
+                                  bg=self.T["bg"], fg=self.T["muted"])
         self.mode_desc.pack(side="left", padx=(6, 0), pady=(4, 0))
 
         # —— HUD 指标卡 ——
@@ -139,56 +139,75 @@ class DashboardApp:
             ("screen", "屏幕时长", "min"),
         ]
         for i, (key, label, unit) in enumerate(specs):
-            holder = tk.Frame(self.bg, bg=_TEAL, padx=2, pady=2)  # 外框=发光描边
+            holder = tk.Frame(self.bg, bg=self.T["teal"], padx=2, pady=2)  # 外框=发光描边
             holder.place(relx=0.03 + i * 0.2425, y=110,
                          relwidth=0.225, height=128)
-            card = tk.Frame(holder, bg=_PANEL)
+            card = tk.Frame(holder, bg=self.T["panel"])
             card.pack(fill="both", expand=True)
-            val = tk.Label(card, text="--", font=self._f_metric, bg=_PANEL, fg=_FG)
+            val = tk.Label(card, text="--", font=self._f_metric, bg=self.T["panel"], fg=self.T["fg"])
             val.pack(anchor="w", padx=14, pady=(14, 0))
-            sub = tk.Frame(card, bg=_PANEL)
+            sub = tk.Frame(card, bg=self.T["panel"])
             sub.pack(anchor="w", padx=14)
             tk.Label(sub, text=label, font=self._f_label,
-                     bg=_PANEL, fg=_MUTED).pack(side="left")
+                     bg=self.T["panel"], fg=self.T["muted"]).pack(side="left")
             tk.Label(sub, text=" " + unit, font=self._f_unit,
-                     bg=_PANEL, fg=_MUTED).pack(side="left")
+                     bg=self.T["panel"], fg=self.T["muted"]).pack(side="left")
             self.cards[key] = {"val": val, "glow": holder}
 
         # —— 弥悠台词条 ——
-        strip = tk.Frame(self.bg, bg=_PANEL2, padx=14, pady=8)
+        strip = tk.Frame(self.bg, bg=self.T["panel2"], padx=14, pady=8)
         strip.place(relx=0.03, y=252, relwidth=0.94, height=44)
         self.mood_dot = tk.Label(strip, text="●", font=("Arial", 14),
-                                 bg=_PANEL2, fg=_TEAL)
+                                 bg=self.T["panel2"], fg=self.T["teal"])
         self.mood_dot.pack(side="left", padx=(0, 8))
         tk.Label(strip, text="弥悠", font=self._f_chip,
-                 bg=_PANEL2, fg=_FG).pack(side="left", padx=(0, 10))
+                 bg=self.T["panel2"], fg=self.T["fg"]).pack(side="left", padx=(0, 10))
         self.persona_lbl = tk.Label(strip, text="哼，今天也勉强陪你一下好了。",
-                                    font=self._f_body, bg=_PANEL2, fg=_FG,
+                                    font=self._f_body, bg=self.T["panel2"], fg=self.T["fg"],
                                     anchor="w")
         self.persona_lbl.pack(side="left", fill="x", expand=True)
 
         # —— 远眺倒计时 + 休息按钮 ——
-        bar = tk.Frame(self.bg, bg=_BG)
+        bar = tk.Frame(self.bg, bg=self.T["bg"])
         bar.place(relx=0.03, y=308, relwidth=0.94)
-        self.break_lbl = tk.Label(bar, text="", font=self._f_body, bg=_BG, fg=_TEAL)
+        self.break_lbl = tk.Label(bar, text="", font=self._f_body, bg=self.T["bg"], fg=self.T["teal"])
         self.break_lbl.pack(side="left")
         tk.Button(bar, text="我已远眺 / 休息", command=self.m.acknowledge_break,
-                  bg=_PANEL2, fg=_FG, relief="flat", padx=16, pady=5,
-                  activebackground=_TEAL, activeforeground=_BG,
+                  bg=self.T["panel2"], fg=self.T["fg"], relief="flat", padx=16, pady=5,
+                  activebackground=self.T["teal"], activeforeground=self.T["bg"],
                   font=self._f_chip).pack(side="right")
 
         # —— 实时建议 / 严格升级列表 ——
-        advwrap = tk.Frame(self.bg, bg=_BG)
+        advwrap = tk.Frame(self.bg, bg=self.T["bg"])
         advwrap.place(relx=0.03, y=348, relwidth=0.94, relheight=0.42)
         tk.Label(advwrap, text="实时健康建议", font=self._f_label,
-                 bg=_BG, fg=_MUTED).pack(anchor="w")
-        self.adv_box = tk.Frame(advwrap, bg=_PANEL)
+                 bg=self.T["bg"], fg=self.T["muted"]).pack(anchor="w")
+        self.adv_box = tk.Frame(advwrap, bg=self.T["panel"])
         self.adv_box.pack(fill="both", expand=True, pady=(6, 0))
 
         # —— 免责声明 ——
         tk.Label(self.bg, text=CONFIG.disclaimer, font=("Microsoft YaHei", 8),
-                 bg=_BG, fg=_MUTED, wraplength=820, justify="left"
+                 bg=self.T["bg"], fg=self.T["muted"], wraplength=820, justify="left"
                  ).place(relx=0.03, rely=0.95, relwidth=0.94)
+
+    # ---- 主题 --------------------------------------------------------
+    def _level_color(self, level: str) -> str:
+        return {"info": self.T["cyan"], "warn": self.T["amber"],
+                "alert": self.T["coral"]}.get(level, self.T["cyan"])
+
+    def _toggle_theme(self) -> None:
+        """🎨 切换主题：换 token → 持久化 → 整体重建界面（widget 全在 self.bg 下）。"""
+        self._theme_name = theme_mod.next_theme_name(self._theme_name)
+        self.T = theme_mod.get_theme(self._theme_name)
+        theme_mod.save_theme_name(self._theme_name, self._data_dir)
+        self.root.configure(bg=self.T["bg"])
+        self._mode_btns.clear()
+        try:
+            self.bg.destroy()
+        except Exception:
+            pass
+        self._build()
+        self._sync_mode_ui()
 
     # ---- 模式 --------------------------------------------------------
     def _switch_mode(self, mode_value: str) -> None:
@@ -200,9 +219,9 @@ class DashboardApp:
         cur = self.m.mode.value
         for val, btn in self._mode_btns.items():
             if val == cur:
-                btn.config(bg=_TEAL, fg=_BG)
+                btn.config(bg=self.T["teal"], fg=self.T["bg"])
             else:
-                btn.config(bg=_PANEL, fg=_MUTED)
+                btn.config(bg=self.T["panel"], fg=self.T["muted"])
         meta = MODE_META[self.m.mode]
         self.mode_desc.config(text="· " + meta[2])
         # 勿扰模式隐藏桌宠，其余常驻
@@ -234,24 +253,24 @@ class DashboardApp:
             return f"{v:.{nd}f}" if v is not None else "--"
 
         t = CONFIG.thresholds
-        br_color = _TEAL if snap.blink_rate >= t.blink_rate_normal else (
-            _AMBER if snap.blink_rate >= t.blink_rate_low else _CORAL)
+        br_color = self.T["teal"] if snap.blink_rate >= t.blink_rate_normal else (
+            self.T["amber"] if snap.blink_rate >= t.blink_rate_low else self.T["coral"])
         self._set_card("blink", fmt(snap.blink_rate), br_color)
-        d_color = _TEAL if (snap.distance or 0) >= t.distance_min_cm else _AMBER
-        self._set_card("distance", fmt(snap.distance), d_color if snap.distance else _MUTED)
-        cva_color = _TEAL if (snap.cva or 0) >= t.cva_good else (
-            _AMBER if (snap.cva or 0) >= t.cva_warning else _CORAL)
-        self._set_card("cva", fmt(snap.cva), cva_color if snap.cva else _MUTED)
-        self._set_card("screen", fmt(snap.screen_time_min, 1), _CYAN)
+        d_color = self.T["teal"] if (snap.distance or 0) >= t.distance_min_cm else self.T["amber"]
+        self._set_card("distance", fmt(snap.distance), d_color if snap.distance else self.T["muted"])
+        cva_color = self.T["teal"] if (snap.cva or 0) >= t.cva_good else (
+            self.T["amber"] if (snap.cva or 0) >= t.cva_warning else self.T["coral"])
+        self._set_card("cva", fmt(snap.cva), cva_color if snap.cva else self.T["muted"])
+        self._set_card("screen", fmt(snap.screen_time_min, 1), self.T["cyan"])
 
         # 远眺倒计时
         if not snap.face_present:
-            self.break_lbl.config(text="未检测到人脸（已暂停计时）", fg=_MUTED)
+            self.break_lbl.config(text="未检测到人脸（已暂停计时）", fg=self.T["muted"])
         else:
             mm, ss = divmod(int(snap.next_break_in_sec), 60)
             self.break_lbl.config(
                 text=f"距下次远眺 {mm:02d}:{ss:02d}   ·   连续用眼 "
-                     f"{snap.continuous_use_min:.1f} 分钟", fg=_TEAL)
+                     f"{snap.continuous_use_min:.1f} 分钟", fg=self.T["teal"])
 
         # 弥悠情绪 / 台词
         rgb, spd = _MOOD_FX.get(snap.mood, _MOOD_FX["normal"])
@@ -293,26 +312,26 @@ class DashboardApp:
         items = snap.strict_alerts if (snap.mode == "strict" and snap.strict_alerts) else None
         if items:
             for a in items:
-                row = tk.Frame(self.adv_box, bg=_PANEL)
+                row = tk.Frame(self.adv_box, bg=self.T["panel"])
                 row.pack(fill="x", padx=12, pady=5, anchor="w")
                 tk.Label(row, text="▮" * (a.severity + 1), fg=a.color,
-                         bg=_PANEL, font=("Arial", 11)).pack(side="left", padx=(0, 8))
+                         bg=self.T["panel"], font=("Arial", 11)).pack(side="left", padx=(0, 8))
                 tk.Label(row, text=f"{a.title}（持续升级 Lv.{a.severity}）：{a.detail}",
-                         font=self._f_body, bg=_PANEL, fg=_FG,
+                         font=self._f_body, bg=self.T["panel"], fg=self.T["fg"],
                          wraplength=720, justify="left").pack(side="left")
             return
         if snap.advices:
             for a in snap.advices:
-                row = tk.Frame(self.adv_box, bg=_PANEL)
+                row = tk.Frame(self.adv_box, bg=self.T["panel"])
                 row.pack(fill="x", padx=12, pady=5, anchor="w")
-                tk.Label(row, text="●", fg=_LEVEL_COLOR[a.level.value], bg=_PANEL,
+                tk.Label(row, text="●", fg=self._level_color(a.level.value), bg=self.T["panel"],
                          font=("Arial", 10)).pack(side="left", padx=(0, 8))
                 tk.Label(row, text=f"{a.title}：{a.detail}", font=self._f_body,
-                         bg=_PANEL, fg=_FG, wraplength=720, justify="left"
+                         bg=self.T["panel"], fg=self.T["fg"], wraplength=720, justify="left"
                          ).pack(side="left")
         else:
             tk.Label(self.adv_box, text="用眼习惯良好，继续保持 :)",
-                     font=self._f_body, bg=_PANEL, fg=_TEAL).pack(padx=12, pady=14)
+                     font=self._f_body, bg=self.T["panel"], fg=self.T["teal"]).pack(padx=12, pady=14)
 
     # ---- 严格模式弹窗（颜色逐级加深）---------------------------------
     def _maybe_strict_popup(self, snap) -> None:
@@ -335,17 +354,17 @@ class DashboardApp:
         top.overrideredirect(True)
         top.attributes("-topmost", True)
         top.configure(bg=alert.color)
-        body = tk.Frame(top, bg=_PANEL, padx=18, pady=14)
+        body = tk.Frame(top, bg=self.T["panel"], padx=18, pady=14)
         body.pack(padx=3, pady=3)
         tk.Label(body, text=f"⚠ {alert.title}", font=self._f_chip,
-                 bg=_PANEL, fg=alert.color).pack(anchor="w")
+                 bg=self.T["panel"], fg=alert.color).pack(anchor="w")
         tk.Label(body, text=f"严重度 Lv.{alert.severity} · 持续未改善",
-                 font=("Microsoft YaHei", 8), bg=_PANEL, fg=_MUTED
+                 font=("Microsoft YaHei", 8), bg=self.T["panel"], fg=self.T["muted"]
                  ).pack(anchor="w", pady=(2, 6))
-        tk.Label(body, text=alert.detail, font=self._f_body, bg=_PANEL,
-                 fg=_FG, wraplength=300, justify="left").pack(anchor="w")
+        tk.Label(body, text=alert.detail, font=self._f_body, bg=self.T["panel"],
+                 fg=self.T["fg"], wraplength=300, justify="left").pack(anchor="w")
         tk.Button(body, text="知道了", command=lambda: self._close_popup(top),
-                  bg=alert.color, fg=_BG, relief="flat", padx=12, pady=3,
+                  bg=alert.color, fg=self.T["bg"], relief="flat", padx=12, pady=3,
                   font=self._f_sub).pack(anchor="e", pady=(8, 0))
 
         sw = top.winfo_screenwidth()
@@ -391,6 +410,7 @@ class DashboardApp:
 
     def _show_guard_overlay(self, action) -> None:
         """soft 强制休息遮罩：全屏、置顶、倒计时结束前无法关闭。"""
+        G = theme_mod.GUARD   # 遮罩固定暗色：休息时调暗环境，与主题无关
         win = tk.Toplevel(self.root)
         self._guard_win = win
         win.attributes("-topmost", True)
@@ -398,7 +418,7 @@ class DashboardApp:
             win.attributes("-fullscreen", True)
         except Exception:
             win.geometry(f"{win.winfo_screenwidth()}x{win.winfo_screenheight()}+0+0")
-        win.configure(bg="#060910")
+        win.configure(bg=G["bg"])
         try:
             win.attributes("-alpha", 0.96)
         except Exception:
@@ -412,21 +432,21 @@ class DashboardApp:
             except Exception:
                 pass
 
-        wrap = tk.Frame(win, bg="#060910")
+        wrap = tk.Frame(win, bg=G["bg"])
         wrap.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(wrap, text="⛔ 强制护眼休息", font=("Microsoft YaHei", 30, "bold"),
-                 bg="#060910", fg=_CORAL).pack(pady=(0, 10))
+                 bg=G["bg"], fg=G["coral"]).pack(pady=(0, 10))
         tk.Label(wrap, text=action.line, font=("Microsoft YaHei", 15),
-                 bg="#060910", fg=_FG, wraplength=680, justify="center").pack(pady=(0, 6))
+                 bg=G["bg"], fg=G["fg"], wraplength=680, justify="center").pack(pady=(0, 6))
         tk.Label(wrap, text=action.reason, font=("Microsoft YaHei", 10),
-                 bg="#060910", fg=_MUTED, wraplength=680, justify="center").pack(pady=(0, 18))
+                 bg=G["bg"], fg=G["muted"], wraplength=680, justify="center").pack(pady=(0, 18))
         tk.Label(wrap, text="请闭眼放松、眺望 6 米外远处，让眼睛休息一下。",
-                 font=("Microsoft YaHei", 12), bg="#060910", fg=_TEAL).pack(pady=(0, 14))
+                 font=("Microsoft YaHei", 12), bg=G["bg"], fg=G["teal"]).pack(pady=(0, 14))
         count_lbl = tk.Label(wrap, text="", font=("Consolas", 40, "bold"),
-                             bg="#060910", fg=_AMBER)
+                             bg=G["bg"], fg=G["amber"])
         count_lbl.pack()
         btn = tk.Button(wrap, text="休息中…", state="disabled", relief="flat",
-                        bg=_PANEL2, fg=_MUTED, font=self._f_chip, padx=20, pady=6)
+                        bg=G["panel2"], fg=G["muted"], font=self._f_chip, padx=20, pady=6)
         btn.pack(pady=(18, 0))
 
         def _countdown(remain: int) -> None:
@@ -434,8 +454,8 @@ class DashboardApp:
                 return
             if remain <= 0:
                 count_lbl.config(text="0")
-                btn.config(text="我已休息，继续", state="normal", bg=_TEAL, fg=_BG,
-                           cursor="hand2", command=_close, activebackground=_CYAN)
+                btn.config(text="我已休息，继续", state="normal", bg=G["teal"], fg=G["bg"],
+                           cursor="hand2", command=_close, activebackground=G["cyan"])
                 return
             count_lbl.config(text=str(remain))
             win.after(1000, lambda: _countdown(remain - 1))

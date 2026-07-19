@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.11.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.12.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -83,8 +83,22 @@ python -m brighteye.main --report monthly
 | 😊 **表情情绪呵护** | 复用 MediaPipe FaceLandmarker 的 52 维 blendshapes（零新增模型），FACS 动作单元(AU) → Ekman 情绪原型可解释映射 + EMA 平滑 + 迟滞去抖，输出 积极/平静/疲惫/压力/低落；检测到疲惫/压力/低落持续，弥悠主动关怀。 | 始终本地可用 |
 | ⛔ **极端用眼强制干预** | 连续用眼久 + 距离过近 + 眨眼率极低同时持续满足才触发（带冷却）；soft=全屏遮罩+强制休息倒计时（默认），hard=Windows 系统锁屏。 | 始终本地可用 |
 
-> 启用大模型二选一：本地 `ollama pull qwen2.5:7b-instruct` + `ollama pull deepseek-r1:7b`，
-> 或设环境变量 `BRIGHTEYE_LLM_BASE` / `BRIGHTEYE_LLM_KEY`（兼容 DeepSeek 官方等 OpenAI 风格 API）。
+> 启用大模型：运行 `llm_models/install_models.bat` 一键安装（Windows；Linux/macOS 用
+> `install_models.sh`），或设环境变量 `BRIGHTEYE_LLM_BASE` / `BRIGHTEYE_LLM_KEY`
+> （兼容 DeepSeek 官方等 OpenAI 风格 API）。**v1.12.0 起软件启动会自动拉起本地
+> Ollama 服务**（探测不到时后台无窗口启动 `ollama serve`，≤25s 就绪，失败静默降级
+> 离线；`config.llm.auto_start_ollama` 可关）。模型 8.8GB 超 GitHub 上传限制，
+> 仓库只含安装脚本不含模型本体，见 `llm_models/README.md`。
+
+### 仪表盘双主题（v1.12.0 · 顶栏 🎨 一键切换，选择自动记住）
+| 主题 | 风格 |
+| --- | --- |
+| 🌙 **弥悠·星夜**（默认） | 午夜紫深底 + 发光描边 + 紫/青/粉高饱和撞色，保留电竞导播科技感。|
+| 🍬 **弥悠·奶糖** | 奶白粉紫浅底 + 糖果色卡片，可爱风；文字加深保证可读性。|
+
+> 配色 token 集中在 `ui/theme.py`，均按弥悠人设的粉紫发/紫瞳定调；
+> 强制休息遮罩固定暗色不随主题（休息时理应调暗环境）。
+> 皮肤专项（界面上传立绘 + soul.md）设计方案见 `docs/皮肤系统设计方案.md`，下版实施。
 
 ### 健康报告可视化四件套（v1.10.0 · 纯标准库内联 SVG，零依赖）
 | 图表 | 说明 |
@@ -143,9 +157,14 @@ brighteye/
 │   ├── 大模型接入与部署指南.md   Ollama / 云端 API / 离线兜底三方案
 │   ├── 打包发布指南_一键安装包.md PyInstaller + Inno Setup 一键打包
 │   ├── 多端数据同步API.md        局域网同步接口定义与手机端对接
+│   ├── 皮肤系统设计方案.md       界面上传立绘/soul.md 皮肤包设计（v1.12 规划）
 │   └── UI技术栈升级路线.md       PySide6 / Tauri 迁移规划
+├── llm_models/
+│   ├── README.md        模型获取说明（8.8GB 超 GitHub 限制 → 脚本分发）
+│   ├── install_models.bat  Windows 一键装 Ollama + 拉取两模型
+│   └── install_models.sh   Linux/macOS 一键安装
 ├── tools/
-│   └── build_exe.py     一键打包脚本（PyInstaller onedir + 生成 Inno Setup 脚本）
+│   └── build_exe.py     一键打包脚本（PyInstaller onedir + Inno Setup + 软件图标接入）
 ├── vision/
 │   ├── detectors.py     MediaPipe 真实检测后端（EAR 眨眼 / 同侧拓扑 CVA 坐姿 / 瞳距测距 / blendshapes）
 │   └── worker.py        视觉推理独立子进程（spawn 安全，Queue 回传，崩溃自动回退）
@@ -169,7 +188,8 @@ brighteye/
 │   ├── report_charts.py 报告图表四件套（纯标准库内联 SVG：雷达/趋势/热力/建议）
 │   └── health_report.py 健康评分 + 文本/HTML 报告（图表四件套 + AI 行为洞察 + 跨设备合并）
 └── ui/
-    ├── app.py           Tkinter 实时仪表盘（电竞导播风 + 粒子背景 + 模式切换 + 强制遮罩）
+    ├── app.py           Tkinter 实时仪表盘（双主题 + 粒子背景 + 模式切换 + 强制遮罩）
+    ├── theme.py         双主题配色 token（弥悠·星夜 / 弥悠·奶糖，🎨 切换持久化）
     ├── chat.py          galgame 风桌宠聊天窗口
     ├── particles.py     Canvas 粒子背景（星座连线 + 状态变色 + 帧耗时自适应降载）
     └── pet.py           悬浮桌宠「弥悠」（透明置顶可拖拽 + 差分立绘/矢量兜底）

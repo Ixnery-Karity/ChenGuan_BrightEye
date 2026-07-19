@@ -168,7 +168,8 @@ def refresh_lines_llm(config, once: bool = False,
             base_url=getattr(llm_cfg, "base_url", ""),
             api_key_env=getattr(llm_cfg, "api_key_env", "BRIGHTEYE_LLM_KEY"),
             ollama_host=getattr(llm_cfg, "ollama_host", "http://localhost:11434"),
-            timeout_sec=getattr(llm_cfg, "timeout_sec", 20.0))
+            timeout_sec=getattr(llm_cfg, "timeout_sec", 20.0),
+            auto_start=getattr(llm_cfg, "auto_start_ollama", True))
         if not client.available():
             return
         model = getattr(llm_cfg, "chat_model", "qwen2.5:7b-instruct")

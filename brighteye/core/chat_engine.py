@@ -389,6 +389,7 @@ class ChatEngine:
                 api_key_env=getattr(llm_cfg, "api_key_env", "BRIGHTEYE_LLM_KEY"),
                 ollama_host=getattr(llm_cfg, "ollama_host", "http://localhost:11434"),
                 timeout_sec=getattr(llm_cfg, "timeout_sec", 20.0),
+                auto_start=getattr(llm_cfg, "auto_start_ollama", True),
             )
             self._llm_ready = self._llm.available()
         except Exception:

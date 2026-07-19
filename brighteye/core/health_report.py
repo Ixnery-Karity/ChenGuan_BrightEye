@@ -84,6 +84,7 @@ def llm_insight(summary: dict, config) -> "str | None":
             ollama_host=getattr(llm_cfg, "ollama_host", "http://localhost:11434"),
             # 复盘用推理模型(DeepSeek-R1)+首帧冷加载较慢，放宽超时(报告非实时、可等)
             timeout_sec=max(90.0, getattr(llm_cfg, "timeout_sec", 20.0)),
+            auto_start=getattr(llm_cfg, "auto_start_ollama", True),
         )
         if not client.available():
             return None

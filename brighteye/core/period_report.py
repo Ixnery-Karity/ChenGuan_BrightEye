@@ -84,6 +84,7 @@ def _period_insight(summary: dict, daily: List[dict], config,
             api_key_env=getattr(llm_cfg, "api_key_env", "BRIGHTEYE_LLM_KEY"),
             ollama_host=getattr(llm_cfg, "ollama_host", "http://localhost:11434"),
             timeout_sec=max(90.0, getattr(llm_cfg, "timeout_sec", 20.0)),
+            auto_start=getattr(llm_cfg, "auto_start_ollama", True),
         )
         if not client.available():
             return None

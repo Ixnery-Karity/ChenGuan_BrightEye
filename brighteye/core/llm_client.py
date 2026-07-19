@@ -19,6 +19,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from typing import List, Optional
@@ -29,6 +32,42 @@ _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _BACKEND_API = "openai"      # OpenAI 兼容 /chat/completions
 _BACKEND_OLLAMA = "ollama"   # 本地 Ollama /api/chat
 _BACKEND_NONE = "none"
+
+# 自动拉起 Ollama：每个进程只尝试一次（多处 LLMClient 实例共享此标记）
+_ollama_start_attempted = False
+
+
+def _try_start_ollama() -> bool:
+    """探测失败时后台拉起本地 Ollama 服务（`ollama serve`，无窗口分离进程）。
+
+    找不到可执行文件 / 已尝试过 / 启动异常 → 返回 False，调用方照常降级离线。
+    """
+    global _ollama_start_attempted
+    if _ollama_start_attempted:
+        return False
+    _ollama_start_attempted = True
+    exe = shutil.which("ollama")
+    if not exe and os.name == "nt":
+        cand = os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                            "Programs", "Ollama", "ollama.exe")
+        if os.path.isfile(cand):
+            exe = cand
+    if not exe:
+        return False
+    try:
+        kwargs = {}
+        if os.name == "nt":
+            # DETACHED_PROCESS | CREATE_NO_WINDOW：随软件启动、不弹黑窗、软件退出后仍存活
+            kwargs["creationflags"] = 0x00000008 | 0x08000000
+        else:
+            kwargs["start_new_session"] = True
+        subprocess.Popen([exe, "serve"],
+                         stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **kwargs)
+        return True
+    except Exception:
+        return False
 
 
 def strip_think(text: str) -> str:
@@ -47,7 +86,7 @@ class LLMClient:
 
     def __init__(self, base_url: str = "", api_key_env: str = "BRIGHTEYE_LLM_KEY",
                  ollama_host: str = "http://localhost:11434",
-                 timeout_sec: float = 20.0):
+                 timeout_sec: float = 20.0, auto_start: bool = True):
         # base_url 优先取显式参数，其次环境变量（兼容 OPENAI_BASE_URL）
         self.base_url = (base_url
                          or os.environ.get("BRIGHTEYE_LLM_BASE")
@@ -56,26 +95,46 @@ class LLMClient:
         self.api_key = os.environ.get(api_key_env) or os.environ.get("OPENAI_API_KEY") or ""
         self.ollama_host = ollama_host.rstrip("/")
         self.timeout = timeout_sec
+        self.auto_start = auto_start          # 探测不到 Ollama 时是否自动拉起服务
         self._backend: Optional[str] = None   # 惰性探测缓存
+        self._none_ts = 0.0                   # 上次判定「无后端」的时刻（供限速复检）
 
     # ---- 后端探测 ----------------------------------------------------
+    def _probe_ollama(self, timeout: float = 2.0) -> bool:
+        try:
+            req = urllib.request.Request(self.ollama_host + "/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
     def _detect(self) -> str:
         if self._backend is not None:
-            return self._backend
+            # 「无后端」结论允许 30 秒后复检一次：覆盖 Ollama 慢启动 /
+            # 用户中途手动开启服务的场景，成功后即升级为可用
+            if self._backend == _BACKEND_NONE and time.time() - self._none_ts > 30.0:
+                self._backend = None
+            else:
+                return self._backend
         # ① OpenAI 兼容 API：只要配了 base_url 即认为可用（真伪由实际调用兜底）
         if self.base_url:
             self._backend = _BACKEND_API
             return self._backend
         # ② 本地 Ollama：探测 /api/tags
-        try:
-            req = urllib.request.Request(self.ollama_host + "/api/tags", method="GET")
-            with urllib.request.urlopen(req, timeout=2.0) as resp:
-                if resp.status == 200:
+        if self._probe_ollama(2.0):
+            self._backend = _BACKEND_OLLAMA
+            return self._backend
+        # ②b 未运行 → 自动拉起本地 Ollama 服务并等它就绪（每进程只拉一次；
+        #     调用方均在后台线程，等待不冻结 UI；实测冷启动就绪约 10~20s）
+        if self.auto_start and _try_start_ollama():
+            deadline = time.time() + 25.0
+            while time.time() < deadline:
+                time.sleep(0.5)
+                if self._probe_ollama(1.0):
                     self._backend = _BACKEND_OLLAMA
                     return self._backend
-        except Exception:
-            pass
         self._backend = _BACKEND_NONE
+        self._none_ts = time.time()
         return self._backend
 
     def available(self) -> bool:

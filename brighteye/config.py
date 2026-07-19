@@ -54,6 +54,7 @@ class LLMConfig:
     base_url: str = ""                   # OpenAI 兼容端点(留空则读环境变量/回落 Ollama)
     api_key_env: str = "BRIGHTEYE_LLM_KEY"        # 存放 API Key 的环境变量名
     ollama_host: str = "http://localhost:11434"
+    auto_start_ollama: bool = True       # 探测不到 Ollama 服务时自动后台拉起(随软件启动)
     timeout_sec: float = 20.0            # 单次请求超时；超时即安全回退离线
     chat_memory_turns: int = 6           # 桌宠多轮对话短期记忆保留的最近轮数
     # —— 启动优化 ——
@@ -129,7 +130,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.11.0-demo"
+    version: str = "1.12.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)

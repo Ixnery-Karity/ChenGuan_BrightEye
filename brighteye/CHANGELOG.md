@@ -5,6 +5,41 @@
 
 ---
 
+## v1.12.0-demo — 2026-07-19
+
+四件事：Ollama 随软件自动启动（大模型再不"失联"）、大模型一键安装脚本分发
+（llm_models/）、仪表盘双主题可切换（弥悠·星夜 / 弥悠·奶糖）、封装打包接入软件图标。
+
+### 新增
+- **Ollama 自动启动**（`core/llm_client.py`）：软件启动探测不到 Ollama 服务时，
+  自动定位可执行文件（PATH → `%LOCALAPPDATA%\Programs\Ollama`）并以**无窗口
+  分离进程**拉起 `ollama serve`，轮询等待就绪（≤25s，均在后台线程不冻结 UI）；
+  「无后端」结论 30s 后允许复检（覆盖慢启动/中途手动开启）；每进程只拉一次；
+  `config.py` 新增 `llm.auto_start_ollama` 开关（默认开），聊天/复盘/周报/台词池
+  四处调用点全部生效。实测：杀掉 Ollama 后启动软件，10.6s 自动拉起并成功对话。
+- **大模型一键安装脚本** `llm_models/`：模型共 8.8GB 超 GitHub 各类上传限制
+  （单文件 100MB / LFS 免费 1GB / Release 附件 2GB），仓库改放 KB 级分发脚本——
+  `install_models.bat`（Windows：winget 装 Ollama + pull 两模型）与
+  `install_models.sh`（Linux/macOS：官方脚本）+ README（含低配机小模型/云端 API 替代）。
+- **仪表盘双主题系统** `ui/theme.py`：配色 token 集中管理，顶栏 🎨 一键切换——
+  - 🌙 **弥悠·星夜**（默认）：午夜紫深底 + 发光描边 + 紫/青/粉高饱和撞色（科技感）；
+  - 🍬 **弥悠·奶糖**：奶白粉紫浅底 + 糖果色卡片（可爱风，文字加深保对比度）；
+  两套均按弥悠粉紫发/紫瞳定调；选择持久化 `data/ui_theme.json`；切换即时整体
+  重建界面；强制休息遮罩固定暗色（休息时理应调暗，与主题无关）。
+- **封装打包接入软件图标**（`tools/build_exe.py`）：图标放
+  `brighteye/assets/app_icon.ico` 自动接入 exe（PyInstaller `--icon`）与
+  Inno 安装向导（`SetupIconFile`）；只有 PNG 时用 Pillow 自动转多尺寸 .ico
+  （16~256 全覆盖）；缺失/转换失败用默认图标不报错。
+- **皮肤系统设计方案** `docs/皮肤系统设计方案.md`：界面直接上传立绘 + soul.md
+  的皮肤包结构（目录即皮肤、全字段可缺省安全降级）、宽松 soul.md 解析约定、
+  防出戏/医疗合规固定规则、两阶段实施拆分（本版仅出方案，下版实施）。
+
+### 变更
+- `ui/app.py`：配色由模块级常量改为实例级主题 token（`self.T`），docstring 换代；
+  `config.py` 版本 1.11.0 → **1.12.0**。
+
+---
+
 ## v1.11.0-demo — 2026-07-19
 
 五件事：启动全面提速（UI 秒开 + 聊天不再冻结）、监测历史 SQLite 持久化、

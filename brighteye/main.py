@@ -7,10 +7,11 @@
     python -m brighteye.main --simulate      # 强制模拟数据(无摄像头演示)
     python -m brighteye.main --simulate --fast 8   # 加速8倍, 快速触发告警演示
     python -m brighteye.main --mode strict   # 指定启动模式(companion/strict/review/silent)
-    python -m brighteye.main --pet           # 启动即收起为悬浮桌宠(文乃)，仅留小窗陪伴
+    python -m brighteye.main --pet           # 启动即收起为悬浮桌宠(弥悠)，仅留小窗陪伴
     python -m brighteye.main --mp-vision     # 视觉推理放独立子进程(性能隔离,失败自动回退)
     python -m brighteye.main --sync          # 开启局域网多端同步服务(手机上报用眼时长)
     python -m brighteye.main --headless 20   # 无界面, 跑20秒后直接出报告(自测/CI)
+    python -m brighteye.main --report weekly   # 聚合历史生成周报(monthly=月报)
 """
 
 from __future__ import annotations
@@ -61,12 +62,24 @@ def main() -> None:
                         help="摄像头采集+推理放独立子进程(性能隔离)，失败自动回退")
     parser.add_argument("--sync", action="store_true",
                         help="开启局域网多端同步服务(默认端口 %d)" % CONFIG.sync.port)
+    parser.add_argument("--report", type=str, default=None,
+                        choices=["weekly", "monthly"],
+                        help="基于历史数据直接生成周报/月报后退出(无需摄像头)")
     args = parser.parse_args()
+
+    # —— 周报/月报：聚合 SQLite 历史直接出报告，不启动监测 ——
+    if args.report:
+        from .core.period_report import save_period_report
+        save_period_report(args.report, CONFIG)
+        return
 
     print(f"启动 {CONFIG.app_name} v{CONFIG.version} ...")
     monitor = Monitor(CONFIG, force_simulate=args.simulate,
                       sim_time_scale=args.fast, sim_seed=args.seed,
                       camera_index=args.camera, use_process=args.mp_vision)
+    # 视觉后端在后台线程加载（UI 秒开）；--real / 真机 headless 需要确定结果再继续
+    if args.real or (args.headless > 0 and not args.simulate):
+        monitor.wait_backend()
     print(f"数据源：{monitor.backend_name}")
     if monitor.fallback_reason:
         print(f"[提示] 未启用实时检测，已回退模拟：{monitor.fallback_reason}")

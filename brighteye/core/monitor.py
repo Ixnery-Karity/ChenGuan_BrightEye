@@ -8,6 +8,7 @@ monitor 与 UI 解耦：UI 只需周期性调用 `tick()` 拿到最新快照，
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -93,16 +94,39 @@ class Monitor:
         self._last_line_key = None     # (category, severity) 去重，避免逐帧刷台词
         self._last_line_t = 0.0
         self._last_review_t = time.time()
-        self._calm_since = time.time()  # 持续"无异常"的起点，用于让文乃安静后打盹
+        self._calm_since = time.time()  # 持续"无异常"的起点，用于让弥悠安静后打盹
         self._happy_until = 0.0         # HAPPY 表情的有效截止时刻（仅恢复良好时短暂触发）
         self._had_problem = False       # 上一阶段是否出现过不良用眼，用于触发"恢复→开心"
 
+        # —— 启动优化：视觉后端（mediapipe 导入/摄像头/模型加载共需数秒）
+        # 搬到后台线程，UI 先用模拟数据秒开窗口，就绪后自动热切换真实检测。
+        self._backend_thread: Optional[threading.Thread] = None
         if not force_simulate:
-            self._try_real_backend(camera_index)
+            self.backend_name = "模拟数据（视觉后端加载中…）"
+            self._backend_thread = threading.Thread(
+                target=self._load_backend_bg, args=(camera_index,),
+                daemon=True, name="vision-loader")
+            self._backend_thread.start()
 
-        # 台词扩充守护线程：LLM 可用时后台生成傲娇台词混入抽取池，
-        # 让提醒/夸奖/关怀不再只有内置那几句；不可用时线程立即结束（零影响）。
-        start_line_refresher(config)
+        # 台词扩充守护线程：LLM 可用时后台生成傲娇台词混入抽取池。
+        # 延迟启动，避免开机即批量占用 Ollama、拖慢首条真实对话。
+        delay = getattr(getattr(config, "llm", None), "line_refresh_delay_sec", 20.0)
+        _t = threading.Timer(max(0.0, delay), start_line_refresher, args=(config,))
+        _t.daemon = True
+        _t.start()
+
+    def _load_backend_bg(self, camera_index: int) -> None:
+        """后台线程加载真实视觉后端；失败时把名称复位为纯模拟数据。"""
+        try:
+            self._try_real_backend(camera_index)
+        finally:
+            if not (self._real or self._worker):
+                self.backend_name = "模拟数据"
+
+    def wait_backend(self, timeout: Optional[float] = None) -> None:
+        """等待视觉后端加载完成（--real / headless 真机模式需要确定结果）。"""
+        if self._backend_thread is not None:
+            self._backend_thread.join(timeout)
 
     def set_mode(self, mode) -> None:
         """切换运行模式。支持传 Mode 或其字符串值。"""
@@ -215,7 +239,7 @@ class Monitor:
 
         # —— 平静为基准，HAPPY 仅短暂出现 ——
         # 默认健康状态为 NORMAL(平静)；只有在"刚从不良用眼恢复"的瞬间，
-        # 才让文乃开心几秒(HAPPY)，随后回到平静，避免一直咧嘴笑。
+        # 才让弥悠开心几秒(HAPPY)，随后回到平静，避免一直咧嘴笑。
         healthy = (not advices) and s.face_present
         if advices:
             self._had_problem = True
@@ -225,8 +249,8 @@ class Monitor:
         if mood == NORMAL and now < self._happy_until:
             mood = HAPPY
 
-        # —— 安静足够久 → 文乃打盹（睡眠模式）——
-        # 有异常或离座会重置"安静计时"；持续无异常超过阈值，文乃就犯困入睡、
+        # —— 安静足够久 → 弥悠打盹（睡眠模式）——
+        # 有异常或离座会重置"安静计时"；持续无异常超过阈值，弥悠就犯困入睡、
         # 并停止说话，让睡眠形象真正出现（修掉"话太多导致从不睡"的问题）。
         if advices or not s.face_present:
             self._calm_since = now
@@ -236,7 +260,7 @@ class Monitor:
             mood = SLEEPY
             line = None
 
-        # —— 情绪关怀：检测到疲惫/压力/低落持续一段时间 → 文乃主动安慰 ——
+        # —— 情绪关怀：检测到疲惫/压力/低落持续一段时间 → 弥悠主动安慰 ——
         # （对齐商业计划书「心理健康呵护」；仅在有脸、非勿扰、非睡眠时触发，带冷却）
         care_line = self._emotion_care(emotion, s.face_present, mood, now)
         if care_line:
@@ -338,6 +362,8 @@ class Monitor:
         self.rest.acknowledge_break()
 
     def close(self) -> None:
+        if self._backend_thread is not None and self._backend_thread.is_alive():
+            self._backend_thread.join(timeout=3.0)   # 等加载收尾，避免释放竞态
         if self._worker:
             try:
                 self._worker.close()

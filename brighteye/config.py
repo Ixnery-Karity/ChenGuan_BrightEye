@@ -38,7 +38,7 @@ class Thresholds:
     break_look_far_distance_m: int = 6      # 远眺距离(米)
 
     # 桌宠陪伴节奏 -----------------------------------------------------
-    idle_sleep_sec: float = 40.0            # 持续无异常超过此秒数，文乃犯困入睡(降打扰)
+    idle_sleep_sec: float = 40.0            # 持续无异常超过此秒数，弥悠犯困入睡(降打扰)
 
 
 @dataclass
@@ -56,6 +56,9 @@ class LLMConfig:
     ollama_host: str = "http://localhost:11434"
     timeout_sec: float = 20.0            # 单次请求超时；超时即安全回退离线
     chat_memory_turns: int = 6           # 桌宠多轮对话短期记忆保留的最近轮数
+    # —— 启动优化 ——
+    line_refresh_delay_sec: float = 20.0  # 台词扩充线程延迟启动(秒)，避免抢占首条对话
+    warmup_enabled: bool = True           # 启动后后台预热聊天模型(冷加载提前完成)
 
 
 @dataclass
@@ -81,11 +84,11 @@ class EmotionConfig:
     """表情情绪分析（基于 MediaPipe blendshapes，零新增模型）。
 
     把 52 维 blendshape 归约为 FACS 动作单元(AU)，再按 Ekman 情绪原型加权打分，
-    EMA 平滑 + 迟滞去抖，稳定可解释；持续负面情绪触发文乃关怀台词。
+    EMA 平滑 + 迟滞去抖，稳定可解释；持续负面情绪触发弥悠关怀台词。
     """
     enabled: bool = True
     smooth: float = 0.25                 # AU 分数 EMA 平滑系数(0~1)，越小越稳
-    # —— 关怀触发：负面/压力情绪持续多久后，文乃主动安慰 ——
+    # —— 关怀触发：负面/压力情绪持续多久后，弥悠主动安慰 ——
     care_sustain_sec: float = 25.0
     care_cooldown_sec: float = 180.0     # 两次主动关怀的最小间隔
     # —— FACS-AU → Ekman 情绪原型打分参数 ——
@@ -126,7 +129,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.10.0-demo"
+    version: str = "1.11.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)

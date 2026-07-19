@@ -1,15 +1,15 @@
-"""悬浮桌宠「文乃」——galgame 立绘风 · 担心程度差分动作 · 双轨渲染。
+"""悬浮桌宠「弥悠」——galgame 立绘风 · 担心程度差分动作 · 双轨渲染。
 
-形象取自动漫《迷い猫オーバーラン!》芹泽文乃的官方设定：
-  蜜金长发双马尾 + 双侧深红蝴蝶结 + 黑色十字发饰 · 翠绿大眼 ·
+形象为原创人设弥悠（Miyu，详见 docs/弥悠人设.md）：
+  浅粉紫长发 + 猫耳 + 黑色桃心发夹 · 半睁的紫色大眼 · 黑色项圈(隐私锁) ·
   白色短袖衬衫 + 黑色领带 · 酒红背带连衣裙(金色双排扣 + 白色裙摆滚边) ·
-  黑色过膝袜 + 黑皮鞋。性格重度傲娇、言不由衷、猫系。
+  黑色过膝袜 + 黑皮鞋。性格慵懒傲娇、言不由衷、猫系看护者。
 
 【渲染双轨】
   ① 外部立绘（galgame 风，推荐）：把 AI 生成的透明背景 PNG 立绘放进
      assets/pet/（按情绪命名，见该目录 README.txt），启动即自动加载，
      按「担心程度」选不同姿势差分立绘——这是 galgame 的标准做法（差分立绘）。
-  ② 程序化矢量（兜底）：无 PNG 时用纯 Tkinter 矢量绘制 Q版文乃，
+  ② 程序化矢量（兜底）：无 PNG 时用纯 Tkinter 矢量绘制 Q版弥悠，
      并按情绪切换「不同身体动作」（满意举手 / 日常垂手 / 提醒食指点 +
      叉腰 / 生气双手叉腰 / 犯困揉眼），零外部素材，任何环境可演示。
 
@@ -44,9 +44,9 @@ _KEY = "#ff00fe"
 # —— 形象固定配色（贴合官方设定）——
 _SKIN = "#ffe7d4"
 _SKIN_SH = "#f1c7ab"
-_HAIR = "#d8ad6a"        # 蜜金发
-_HAIR_SH = "#b88f4a"
-_HAIR_HI = "#efd49a"     # 发丝高光
+_HAIR = "#d8b4e2"        # 浅粉紫长发
+_HAIR_SH = "#b18cc4"
+_HAIR_HI = "#efdaf7"     # 发丝高光
 _RIBBON = "#c81f33"      # 深红蝴蝶结
 _RIBBON_SH = "#9c1526"
 _SKIRT = "#b51d2e"       # 酒红背带裙
@@ -60,13 +60,13 @@ _STOCK_HI = "#2c3349"
 _SHOE = "#121219"
 _GOLD = "#e8b54a"        # 金色纽扣
 _GOLD_SH = "#b6862a"
-_EYE = "#2ee6a6"         # 翠绿瞳
-_EYE_DK = "#0f9c72"
+_EYE = "#9b5de5"         # 半睁紫瞳
+_EYE_DK = "#6a35b0"
 _WHITE = "#ffffff"
 _INK = "#2a2138"
 _MOUTH = "#c8556a"
 _BLUSH = "#ff9aa6"
-_CROSS = "#15131c"       # 黑色十字发饰
+_CROSS = "#15131c"       # 黑色桃心发夹（矢量兜底沿用深色发饰绘制）
 
 
 # —— 路线 B：外部 galgame 立绘（PNG）自动加载 ——
@@ -113,7 +113,7 @@ def _pil_remove_bg(im, thresh: int = 60):
     """抠除立绘背景：
       - 若图片自带透明像素（alpha 已有 0），认为美术已抠好，原样返回；
       - 否则从四角泛洪填充(floodfill)判定连通的纯色背景，将其 alpha 置 0，
-        前景（文乃本体）保持不透明。修掉「PNG 背景方框很突兀」的问题。
+        前景（弥悠本体）保持不透明。修掉「PNG 背景方框很突兀」的问题。
     thresh 越大容忍背景渐变越强，但过大可能误吃前景边缘。"""
     im = im.convert("RGBA")
     if im.getchannel("A").getextrema()[0] < 250:
@@ -145,12 +145,26 @@ def _pil_to_photo(im, target_h: int):
     return ImageTk.PhotoImage(im.resize((tw, th), Image.LANCZOS))
 
 
+# 模块级立绘缓存：桌宠与聊天窗共用一份，floodfill 抠图只做一次（启动优化）
+_SPRITE_CACHE = None
+_SPRITE_CACHE_READY = False
+
+
 def _load_sprites():
-    """加载 assets/pet/ 下的立绘。
+    """加载 assets/pet/ 下的立绘（模块级缓存，多处调用只加载一次）。
     优先 PIL：抠背景 + 显示时 LANCZOS 缩放（不裁切、清晰）；
     无 PIL 时退回 tk.PhotoImage（整数倍缩放）。
     返回 (sprites, pil_mode) 或 None（无基准 idle 图→回退矢量）。
     sprites 键：NORMAL/HAPPY/POUT/ANGRY/SLEEPY 与 'blink'。"""
+    global _SPRITE_CACHE, _SPRITE_CACHE_READY
+    if _SPRITE_CACHE_READY:
+        return _SPRITE_CACHE
+    _SPRITE_CACHE = _load_sprites_impl()
+    _SPRITE_CACHE_READY = True
+    return _SPRITE_CACHE
+
+
+def _load_sprites_impl():
     paths: Dict[str, str] = {}
     for mood, fname in SPRITE_FILES.items():
         p = os.path.join(ASSET_DIR, fname)
@@ -332,7 +346,7 @@ class FloatingPet:
         size_menu.add_command(label="缩小 −", command=lambda: self._apply_scale(self._scale - 0.15))
         m.add_cascade(label="形象大小（滚轮可缩放）", menu=size_menu)
         m.add_separator()
-        m.add_command(label="💬 聊天模式（和文乃说说话）",
+        m.add_command(label="💬 聊天模式（和弥悠说说话）",
                       command=lambda: self.on_chat and self.on_chat())
         m.add_command(label="打开仪表盘", command=lambda: self.on_open and self.on_open())
         m.add_command(label="退出", command=lambda: self.on_quit and self.on_quit())
@@ -408,7 +422,7 @@ class FloatingPet:
                 self._draw_bubble(self._bubble, col, sc)
             return
 
-        # —— 兜底：程序化矢量 文乃（先按基准坐标绘制，末尾整体缩放 sc）——
+        # —— 兜底：程序化矢量 弥悠（先按基准坐标绘制，末尾整体缩放 sc）——
         cx = self._cx
         bob = math.sin(t * 0.12) * 4.0
         hy = self._hy0 + bob               # 头部中心 y
@@ -733,7 +747,7 @@ class FloatingPet:
         c.create_polygon(self._round_rect_pts(bx + 2 * sc, by + 3 * sc,
                                               bx + bw + 2 * sc, by + bh + 3 * sc, r),
                          smooth=True, fill=_lerp_hex(col, "#0a0e1a", 0.78), outline="")
-        # 朝下的圆尾（水平居中，指向文乃头顶）
+        # 朝下的圆尾（水平居中，指向弥悠头顶）
         tx = cw / 2.0
         ty = by + bh
         c.create_polygon(tx - 9 * sc, ty - 2 * sc, tx + 9 * sc, ty - 2 * sc,

@@ -6,7 +6,7 @@
 与新系统的联动：
   - 顶部模式切换条（陪伴 / 严格 / 复盘 / 勿扰），点击即时切换；
   - 背景 ParticleField 随用眼状态变色提速（健康绿稳、告警红快）；
-  - 悬浮桌宠「文乃」常驻陪伴，气泡台词来自 persona；
+  - 悬浮桌宠「弥悠」常驻陪伴，气泡台词来自 persona；
   - 严格模式下不良习惯弹窗提醒，持续不改 → 颜色逐级加深。
 """
 
@@ -77,6 +77,8 @@ class DashboardApp:
 
         self._build()
         self.chat_engine = ChatEngine(config=CONFIG)
+        if getattr(CONFIG.llm, "warmup_enabled", True):
+            self.chat_engine.warm_up_async()   # 后台预热聊天模型，首条对话不再冷启动
         self.chat_win = None
         self.pet = FloatingPet(
             self.root,
@@ -152,13 +154,13 @@ class DashboardApp:
                      bg=_PANEL, fg=_MUTED).pack(side="left")
             self.cards[key] = {"val": val, "glow": holder}
 
-        # —— 文乃台词条 ——
+        # —— 弥悠台词条 ——
         strip = tk.Frame(self.bg, bg=_PANEL2, padx=14, pady=8)
         strip.place(relx=0.03, y=252, relwidth=0.94, height=44)
         self.mood_dot = tk.Label(strip, text="●", font=("Arial", 14),
                                  bg=_PANEL2, fg=_TEAL)
         self.mood_dot.pack(side="left", padx=(0, 8))
-        tk.Label(strip, text="文乃", font=self._f_chip,
+        tk.Label(strip, text="弥悠", font=self._f_chip,
                  bg=_PANEL2, fg=_FG).pack(side="left", padx=(0, 10))
         self.persona_lbl = tk.Label(strip, text="哼，今天也勉强陪你一下好了。",
                                     font=self._f_body, bg=_PANEL2, fg=_FG,
@@ -251,7 +253,7 @@ class DashboardApp:
                 text=f"距下次远眺 {mm:02d}:{ss:02d}   ·   连续用眼 "
                      f"{snap.continuous_use_min:.1f} 分钟", fg=_TEAL)
 
-        # 文乃情绪 / 台词
+        # 弥悠情绪 / 台词
         rgb, spd = _MOOD_FX.get(snap.mood, _MOOD_FX["normal"])
         self.pf.set_mood(rgb, spd)
         self.mood_dot.config(fg="#%02x%02x%02x" % rgb)
@@ -260,7 +262,7 @@ class DashboardApp:
             self.persona_lbl.config(text=snap.persona_line)
         self.pet.set_state(snap.mood, snap.persona_line)
 
-        # 把当前用眼/情绪状态注入聊天引擎，让文乃聊天时「看得懂你现在的样子」
+        # 把当前用眼/情绪状态注入聊天引擎，让弥悠聊天时「看得懂你现在的样子」
         self.chat_engine.set_context(
             eye_context=self._eye_context(snap), emotion=snap.emotion)
 
@@ -461,14 +463,14 @@ class DashboardApp:
         self.root.after(200, lambda: self.root.attributes("-topmost", False))
 
     def _open_chat(self) -> None:
-        """右键「聊天模式」→ 打开/聚焦 galgame 风和文乃聊天窗口（单例）。"""
+        """右键「聊天模式」→ 打开/聚焦 galgame 风和弥悠聊天窗口（单例）。"""
         if self.chat_win is not None and self.chat_win.is_alive():
             self.chat_win.focus()
             return
         self.chat_win = ChatWindow(self.root, engine=self.chat_engine)
 
     def _hide_dashboard(self) -> None:
-        """关闭仪表盘 → 收起为悬浮桌宠（不退出，文乃继续陪伴）。"""
+        """关闭仪表盘 → 收起为悬浮桌宠（不退出，弥悠继续陪伴）。"""
         self.root.withdraw()
 
     def _quit(self) -> None:

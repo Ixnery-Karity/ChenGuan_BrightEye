@@ -7,7 +7,7 @@
 上述极端状态持续 `trigger_sustain_sec` 秒才触发一次干预，并带冷却时间。
 
 两档强度（配置 `guardian.mode`）：
-  · soft（默认）：全屏半透明遮罩 + 文乃立绘 + 关怀台词 + 强制休息倒计时，
+  · soft（默认）：全屏半透明遮罩 + 弥悠立绘 + 关怀台词 + 强制休息倒计时，
     纯 UI、零系统风险、可随时演示；
   · hard：调用 Windows `LockWorkStation()` 真系统锁屏；非 Windows 自动降级 soft。
 
@@ -29,10 +29,10 @@ class GuardAction:
     mode: str                 # 实际执行档位：soft | hard
     reason: str               # 触发原因（展示 + 记录）
     force_rest_sec: int       # soft 遮罩强制休息倒计时
-    line: str                 # 文乃的关怀台词
+    line: str                 # 弥悠的关怀台词
 
 
-# soft 遮罩上文乃的话（傲娇但强硬，强制你休息）
+# soft 遮罩上弥悠的话（傲娇但强硬，强制你休息）
 _GUARD_LINES = [
     "够了！你这用眼方式太离谱了——现在，强制休息！不许喊停！",
     "笨蛋！再这样下去眼睛真的要坏掉了…给我停下来，乖乖歇着！",

@@ -69,7 +69,7 @@ class SimulatedVisionBackend:
 
     def _fake_blendshapes(self, elapsed: float) -> dict:
         """模拟 52 维表情系数子集：随用眼时间从「平静」渐转「疲惫/压力」，
-        让无摄像头环境也能演示 AU→情绪分析与文乃关怀触发。
+        让无摄像头环境也能演示 AU→情绪分析与弥悠关怀触发。
         覆盖新情绪引擎所需的 AU 通道（眨眼加重/张口哈欠/眼睑收紧/皱眉等）。"""
         fatigue = min(1.0, elapsed / 240.0)   # 0→1 随时长上升
         j = lambda s=0.05: self.rng.uniform(-s, s)  # noqa: E731  小抖动

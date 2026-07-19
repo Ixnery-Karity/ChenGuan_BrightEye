@@ -68,7 +68,7 @@ EMOTION_ZH = {
     "negative": "低落",
     "unknown": "未知",
 }
-# 需要文乃主动关怀的负面情绪
+# 需要弥悠主动关怀的负面情绪
 CARE_EMOTIONS = {"stressed", "negative", "tired"}
 
 # 护眼关怀优先级仲裁（Gemini 交叉评审建议合入）：

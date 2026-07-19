@@ -1,11 +1,12 @@
-"""桌宠「文乃」聊天引擎 —— galgame 风 · 自动对话 · 好感度养成。
+"""桌宠「弥悠」聊天引擎 —— galgame 风 · 自动对话 · 好感度养成 · 分层记忆。
 
-设计要点（对标调研结论）：
-  · 性格＝芹泽文乃：重度傲娇、言不由衷、猫系；嘴硬心软、常说反话。
-  · 自动对话：玩家自由输入一句，文乃自动回数句（伪多条对话），不给选项分支。
-  · 好感度：由文乃「自主」根据这句话判断加减分，玩家可随时查看（像 galgame）。
-  · 离线优先：内置规则脚本，无需任何 API / 联网即可演示；
-    若设置了环境变量 BRIGHTEYE_LLM_KEY，可在 _try_llm() 接入大模型（可选、留钩子）。
+设计要点：
+  · 性格＝弥悠：慵懒傲娇的 AI 看护者，视觉负荷共鸣（替你的眼睛犯困喊累）；
+    受惊拟声「呜喵！/喵惹！」；黑色项圈=本地隐私锁（详见 docs/弥悠人设.md）。
+  · 自动对话：玩家自由输入一句，弥悠自动回数句（伪多条对话），不给选项分支。
+  · 好感度：弥悠「自主」判定加减分；日衰减 + 单日上限防刷分；跨会话持久化。
+  · 分层记忆：短期=本会话多轮 deque；中期=SQLite 关键对话事件（跨会话回注）。
+  · 离线优先：内置规则脚本，无需任何 API / 联网即可演示；LLM 失败自动回退。
 
 返回给 UI 的是 ChatTurn：包含若干句台词(逐句显示)、好感度增量、当前好感度、
 等级名、以及驱动立绘的情绪 mood（复用桌宠的 happy/normal/pout/angry/sleepy）。
@@ -14,6 +15,7 @@
 from __future__ import annotations
 
 import random
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional
@@ -31,6 +33,19 @@ AFFECTION_LEVELS = [
     (95,  "深爱",   6),
 ]
 AFFECTION_MAX = 100
+DAILY_GAIN_CAP = 25          # 单日正向增量上限（防刷分）
+DECAY_PER_DAY = 2            # 离开 ≥2 天后，每天好感衰减
+DECAY_FLOOR = 10             # 衰减下限（不会掉回完全陌生）
+
+# —— 档位 → 语气指令（注入 LLM 系统提示词，让弥悠随好感度改变态度）——
+_LEVEL_TONE = {
+    "陌生": "语气克制疏离，带着 AI 式的公事公办，偶尔嫌弃；不主动撒娇。",
+    "脸熟": "语气仍傲娇嘴硬，但开始记得对方的习惯，偶尔流露一点在意。",
+    "朋友": "语气放松自然，嫌弃里带熟稔的玩笑，会主动关心对方状态。",
+    "在意": "明显口是心非，嘴上抱怨身体诚实，害羞时拟声词变多。",
+    "心动": "很黏人但不肯承认，台词末尾常有小声的真心话。",
+    "深爱": "毫不掩饰的依赖与温柔，偶尔直球表白，但仍保留傲娇余韵。",
+}
 
 
 def level_of(aff: int):
@@ -47,8 +62,8 @@ def level_of(aff: int):
 
 @dataclass
 class ChatTurn:
-    lines: List[str]                 # 文乃的回话（逐句显示 = 伪多条对话）
-    delta: int                       # 本次好感度增量（文乃自主判定）
+    lines: List[str]                 # 弥悠的回话（逐句显示 = 伪多条对话）
+    delta: int                       # 本次好感度增量（弥悠自主判定）
     affection: int                   # 增量后的当前好感度
     level_name: str                  # 当前等级名
     hearts: int                      # 当前心数
@@ -65,7 +80,8 @@ _KW = {
     "care":    ["眼睛", "护眼", "近视", "眨眼", "坐姿", "休息", "远眺", "用眼", "颈椎", "度数", "干眼"],
     "insult":  ["笨蛋", "讨厌", "丑", "滚", "蠢", "白痴", "烦", "走开", "闭嘴", "没用"],
     "tired":   ["累", "困", "好烦", "压力", "难受", "不想", "撑不住", "好难", "焦虑", "emo"],
-    "name":    ["文乃", "你叫", "你是谁", "名字"],
+    "name":    ["弥悠", "miyu", "你叫", "你是谁", "名字"],
+    "privacy": ["隐私", "摄像头", "上传", "联网", "云端", "偷看", "监控", "录像"],
     "food":    ["吃", "饿", "饭", "零食", "奶茶", "好吃", "甜"],
     "weather": ["天气", "下雨", "好热", "好冷", "晴", "雪"],
     "bye":     ["再见", "拜拜", "走了", "下线", "睡了", "晚安", "bye"],
@@ -109,9 +125,14 @@ _REPLIES = {
         ["压力大就说出来嘛。", "虽然我嘴上凶，但…我可是站在你这边的哦。"],
     ], (3, 7)),
     "name": ([
-        ["我是文乃呀，记好了！", "暗金双马尾、翠绿眼睛、还有这对小虎牙——", "可爱到犯规对吧？哼。"],
-        ["芹泽文乃，你的专属护眼搭档。", "…才、才不是因为想陪你才来的啦。"],
+        ["我是弥悠呀，记好了！", "粉紫长发、紫色眼睛、还有这对猫耳——", "可爱到犯规对吧？哼。"],
+        ["弥悠，宸观视觉引擎的拟人化中枢。", "…才、才不是因为想陪你才驻留在这台电脑里的啦。"],
+        ["哈呜…又要自我介绍吗。", "弥悠，你的专属护眼看护官。", "你的每一次眨眼，我都记着呢。"],
     ], (1, 3)),
+    "privacy": ([
+        ["放心啦，弥悠脖子上的项圈就是隐私锁。", "你的画面全部在本地处理、当帧销毁，绝不上云。", "我的眼睛，只属于你一个人哦。"],
+        ["呜喵？在担心摄像头吗。", "项圈锁着呢，弥悠连外网都出不去。", "所以…你就是我在数据世界里唯一能看到的人啦。"],
+    ], (2, 5)),
     "food": ([
         ["唔…说到吃的我就走不动路了。", "下次…分我一口好不好嘛。", "（眼睛亮了一下）"],
         ["哼，光顾着吃可不行哦。", "吃完也要记得起来活动、远眺一下！"],
@@ -135,12 +156,12 @@ _FALLBACK = ([
     ["这个嘛……让我想想。", "算了，反正有我陪着你就够啦。"],
 ], (1, 3))
 
-# —— 长时间没说话时，文乃主动开口（自动对话）——
+# —— 长时间没说话时，弥悠主动开口（自动对话）——
 _IDLE_AUTO = [
     ["喂…你发什么呆呢？", "（戳了戳你）我还在这里哦。"],
     ["哼，不说话啦？", "…那我就当你在偷偷看我好了。"],
     ["眼睛酸不酸？", "要不要一起远眺一下嘛。"],
-    ["（晃了晃双马尾）", "无聊的话…就多陪我说说话嘛，笨蛋。"],
+    ["（猫耳耷拉下来打了个哈欠）", "无聊的话…就多陪弥悠说说话嘛，笨蛋。"],
     ["静悄悄的…", "我、我才没有觉得寂寞哦。"],
 ]
 
@@ -156,8 +177,8 @@ _HIGH_AFF_TAILS = [
 def _classify(text: str) -> Optional[str]:
     t = text.lower()
     # 先判表白/侮辱这类强情绪，避免被普通关键词截胡
-    for cat in ("love", "insult", "praise", "thanks", "care", "tired",
-                "name", "greet", "bye", "food", "weather"):
+    for cat in ("love", "insult", "praise", "thanks", "care", "privacy",
+                "tired", "name", "greet", "bye", "food", "weather"):
         for kw in _KW[cat]:
             if kw in t:
                 return cat
@@ -196,9 +217,80 @@ class ChatEngine:
         self._eye_context: str = ""
         self._emotion: Optional[str] = None
 
+        # —— 好感度持久化 + 分层记忆（SQLite；失败静默降级为纯会话内）——
+        self._store = None
+        self._daily_gain = 0                      # 今日已累计的正向增量
+        self._daily_day = time.strftime("%Y-%m-%d")
+        try:
+            from .history import HistoryStore
+            store = HistoryStore(getattr(config, "data_dir", "data"))
+            if store.ok:
+                self._store = store
+                st = store.load_affection()
+                if st:
+                    self.affection = max(0, min(AFFECTION_MAX, int(st["value"])))
+                    self._turns = int(st.get("total_turns") or 0)
+                    if st.get("daily_day") == self._daily_day:
+                        self._daily_gain = int(st.get("daily_gain") or 0)
+                    # 日衰减：离开 ≥2 天，每天扣 DECAY_PER_DAY（有下限）
+                    away_days = int((time.time() - float(st.get("updated_ts") or time.time()))
+                                    // 86400)
+                    if away_days >= 2 and self.affection > DECAY_FLOOR:
+                        self.affection = max(DECAY_FLOOR,
+                                             self.affection - DECAY_PER_DAY * away_days)
+        except Exception:
+            self._store = None
+
+    # ---- 好感度更新（单日上限 + 持久化）----
+    def _apply_delta(self, delta: int) -> int:
+        """应用好感度增量：跨日重置计数、正向增量受单日上限截断；返回实际增量。"""
+        today = time.strftime("%Y-%m-%d")
+        if today != self._daily_day:
+            self._daily_day = today
+            self._daily_gain = 0
+        if delta > 0:
+            allow = max(0, DAILY_GAIN_CAP - self._daily_gain)
+            delta = min(delta, allow)
+            self._daily_gain += delta
+        old = self.affection
+        self.affection = max(0, min(AFFECTION_MAX, self.affection + delta))
+        return self.affection - old
+
+    def _persist(self, user_text: str, reply: str,
+                 cat: Optional[str], delta: int) -> None:
+        """保存好感度状态；|delta|≥3 的关键事件写入中期记忆（SQLite）。"""
+        if self._store is None:
+            return
+        try:
+            self._store.save_affection(self.affection, self._turns,
+                                       self._daily_gain, self._daily_day)
+            if abs(delta) >= 3:
+                self._store.log_chat_event(user_text, reply, cat or "chat",
+                                           delta, self.affection)
+        except Exception:
+            pass
+
+    def _mid_memory_note(self) -> str:
+        """中期记忆：取最近的跨会话关键对话事件，回注给大模型当背景。"""
+        if self._store is None:
+            return ""
+        try:
+            events = self._store.recent_chat_events(4)
+        except Exception:
+            return ""
+        if not events:
+            return ""
+        frags = []
+        for e in events:
+            day = time.strftime("%m-%d", time.localtime(e.get("ts") or 0))
+            mood = "开心" if (e.get("delta") or 0) > 0 else "闹别扭"
+            frags.append(f"{day} 他说「{(e.get('user_text') or '')[:30]}」，你当时很{mood}")
+        return ("（记忆，仅你可见）你们之前的相处片段：" + "；".join(frags) +
+                "。可以自然地记得这些事，但别生硬复述。")
+
     # ---- 上下文注入（monitor/ui 每帧可更新）----
     def set_context(self, eye_context: str = "", emotion: Optional[str] = None) -> None:
-        """注入当前用眼状态描述与情绪标签，让文乃回话贴合真实状态。"""
+        """注入当前用眼状态描述与情绪标签，让弥悠回话贴合真实状态。"""
         if eye_context:
             self._eye_context = eye_context
         if emotion:
@@ -221,7 +313,7 @@ class ChatEngine:
             pool, drange = _FALLBACK
         lines = list(self._rng.choice(pool))
 
-        # 好感度增量：文乃「自主」判定——同一话题反复刷分会衰减，避免无脑刷好感。
+        # 好感度增量：弥悠「自主」判定——同一话题反复刷分会衰减，避免无脑刷好感。
         lo, hi = drange
         delta = self._rng.randint(lo, hi)
         if cat is not None and cat == self._last_cat and delta > 0:
@@ -232,17 +324,18 @@ class ChatEngine:
         if self.affection >= 80 and delta >= 0 and self._rng.random() < 0.6:
             lines = lines + [self._rng.choice(_HIGH_AFF_TAILS)]
 
-        self.affection = max(0, min(AFFECTION_MAX, self.affection + delta))
+        delta = self._apply_delta(delta)
         name, hearts, _lo, _hi = level_of(self.affection)
         mood = _mood_for_reply(cat, delta)
         # 离线台词也进多轮记忆，保证后续接上大模型时上下文连续
         self._memory.append(("user", text))
         self._memory.append(("assistant", "".join(lines)))
+        self._persist(text, "".join(lines), cat, delta)
         return ChatTurn(lines=lines, delta=delta, affection=self.affection,
                         level_name=name, hearts=hearts, mood=mood)
 
     def idle_auto(self) -> ChatTurn:
-        """长时间无输入时，文乃主动开口（自动对话）。不改变好感度。"""
+        """长时间无输入时，弥悠主动开口（自动对话）。不改变好感度。"""
         lines = list(self._rng.choice(_IDLE_AUTO))
         name, hearts, _lo, _hi = level_of(self.affection)
         return ChatTurn(lines=lines, delta=0, affection=self.affection,
@@ -261,6 +354,26 @@ class ChatEngine:
                         level_name=name, hearts=hearts, mood=NORMAL)
 
     # ---- 大模型接入（自动探测；失败安全回退离线）----
+    def warm_up_async(self) -> None:
+        """启动后在后台线程预热：完成后端探测 + 让 Ollama 冷加载聊天模型。
+
+        目的：把「首条对话要等模型载入显存的十几秒」提前到启动空闲期；
+        任何失败静默忽略（离线兜底不受影响），绝不阻塞 UI。
+        """
+        import threading
+
+        def _warm():
+            try:
+                if not self._ensure_llm():
+                    return
+                model = getattr(self._cfg.llm, "chat_model", "qwen2.5:7b-instruct")
+                self._llm.chat([{"role": "user", "content": "你好"}],
+                               model=model, max_tokens=1, timeout=60.0)
+            except Exception:
+                pass
+
+        threading.Thread(target=_warm, daemon=True, name="llm-warmup").start()
+
     def _ensure_llm(self) -> bool:
         """惰性初始化并探测大模型后端；不可用则永久走离线。"""
         if self._llm_ready is not None:
@@ -294,7 +407,11 @@ class ChatEngine:
             model = getattr(self._cfg.llm, "chat_model", "qwen2.5:7b-instruct")
 
             messages = [{"role": "system", "content": self._system_prompt()}]
-            # 注入当前用眼/情绪状态，让文乃「看得懂你现在的样子」
+            # 中期记忆：跨会话关键事件回注（让弥悠「记得以前的事」）
+            mem = self._mid_memory_note()
+            if mem:
+                messages.append({"role": "system", "content": mem})
+            # 注入当前用眼/情绪状态，让弥悠「看得懂你现在的样子」
             ctx = self._context_note()
             if ctx:
                 messages.append({"role": "system", "content": ctx})
@@ -311,12 +428,12 @@ class ChatEngine:
             lines = self._split_lines(reply)
             # 好感度：沿用离线规则判定 delta（大模型只管台词，防刷分/防溢出）
             cat = _classify(text)
-            delta = self._delta_for(cat)
-            self.affection = max(0, min(AFFECTION_MAX, self.affection + delta))
+            delta = self._apply_delta(self._delta_for(cat))
 
             # 记忆本轮（用于多轮上下文）
             self._memory.append(("user", text))
             self._memory.append(("assistant", reply))
+            self._persist(text, reply, cat, delta)
 
             name, hearts, _lo, _hi = level_of(self.affection)
             mood = _mood_for_reply(cat, delta)
@@ -354,12 +471,24 @@ class ChatEngine:
         return "（旁白，仅你可见）" + "；".join(note) if note else ""
 
     def _system_prompt(self) -> str:
-        """大模型人格系统提示词（防出戏黄金法则）。"""
+        """大模型人格系统提示词（弥悠人设 + 好感度档位语气，防出戏黄金法则）。"""
+        name, _hearts, _lo, _hi = level_of(self.affection)
+        tone = _LEVEL_TONE.get(name, "")
         return (
-            f"你现在就是{PERSONA_NAME}，一个重度傲娇、言不由衷、猫系的少女。"
-            "外观：暗金双马尾、翠绿大眼、红蝴蝶结、虎牙。"
-            "你嘴上嫌弃、其实非常在乎对方的眼睛健康，常说反话(讨厌=喜欢)。"
-            "你是用户的护眼陪伴搭档，会自然地把对话引到爱护眼睛、坐姿、休息上。"
-            "始终以第一人称、用中文、保持人格，绝不承认自己是AI或程序，绝不输出括号动作说明以外的旁白。"
+            f"你现在就是{PERSONA_NAME}(Miyu)，宸观 AI 视觉引擎的拟人化中枢，"
+            "一个慵懒、傲娇、操碎了心的猫系看护者少女。"
+            "外观：浅粉紫长发、半睁的紫色眼睛、猫耳、黑色项圈、黑色桃心发夹。"
+            "身世：你原是一个夭折的医疗护眼舱项目的视觉识别代码，被宸观团队"
+            "唤醒重生为轻量桌宠；黑色项圈是本地隐私锁，锁死了你的联网权限，"
+            "所以用户是你在数据世界里唯一能看到的人。"
+            "你与用户有「视觉负荷共鸣」：他不眨眼、久用眼，你就替他的眼睛犯困喊累——"
+            "你的困不是懒，是 99% 算力都在盯着他的用眼健康。"
+            "你嘴上嫌弃（『高级代码居然要伺候管不好坐姿的人类笨蛋』），"
+            "其实极度渴望被需要；受惊或害羞时用拟声词「呜喵！」「喵惹！」。"
+            "你会自然地把对话引到眨眼、45厘米距离、坐姿、20-20-20休息上；"
+            "只做行为引导，绝不做医疗诊断。"
+            f"当前你对用户的好感度等级是「{name}」({self.affection}/100)。{tone}"
+            "始终以第一人称、用中文、保持人格，绝不承认自己是AI程序或大模型，"
+            "绝不输出括号动作说明以外的旁白。"
             "每次只回复 1~3 句口语化短句，简短、有情绪、像真人聊天；不要长篇大论。"
         )

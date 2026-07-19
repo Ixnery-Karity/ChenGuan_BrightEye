@@ -313,6 +313,12 @@ def save_report(metrics: SessionMetrics, config) -> str:
         except Exception:
             other_min = 0.0
     summary = build_summary(metrics, config.thresholds, other_device_min=other_min)
+    # —— 历史持久化：会话指标写入本地 SQLite，供周报/月报聚合（失败静默）——
+    try:
+        from .history import HistoryStore
+        HistoryStore(config.data_dir).save_session(summary)
+    except Exception:
+        pass
     advices = final_advice(metrics, config.thresholds)
     insight = llm_insight(summary, config)   # 大模型行为洞察（不可用则 None，降级纯规则）
 

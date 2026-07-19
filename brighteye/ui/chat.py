@@ -1,17 +1,18 @@
-"""galgame 风「和文乃聊天」窗口 —— 立绘 + 底部对话框 + 好感度条 + 自动对话。
+"""galgame 风「和弥悠聊天」窗口 —— 立绘 + 底部对话框 + 好感度条 + 自动对话。
 
 交互（对标 galgame，但不给选项分支）：
   · 立绘居中偏右，左/下方是 galgame 经典对话框（半透明深色 + 名字牌 + 文字）。
-  · 玩家在底部输入框自由打字 → 回车/发送，文乃自动回数句（伪多条对话）；
+  · 玩家在底部输入框自由打字 → 回车/发送，弥悠自动回数句（伪多条对话）；
     每句点「继续 ▼」或按空格推进，放完才等下一次输入。
   · 顶部好感度条：心数 + 等级名 + 进度条，随对话实时变化（像 galgame 恋爱进度）。
-  · 长时间不说话，文乃会主动开口（自动对话）。
+  · 长时间不说话，弥悠会主动开口（自动对话）。
 
 立绘复用桌宠的 assets/pet 加载逻辑；缺图时用占位卡，演示照常可用。
 """
 
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from typing import Optional
@@ -32,11 +33,11 @@ _HEART_OFF = "#33405E"
 _INPUT_BG = "#161E36"
 
 _TYPE_MS = 28            # 打字机每字间隔(ms)
-_IDLE_MS = 18000         # 无输入多久后文乃主动开口(ms)
+_IDLE_MS = 18000         # 无输入多久后弥悠主动开口(ms)
 
 
 class ChatWindow:
-    """单例式聊天窗口；和文乃 galgame 风自动对话。"""
+    """单例式聊天窗口；和弥悠 galgame 风自动对话。"""
 
     def __init__(self, root: tk.Tk, engine: Optional[ChatEngine] = None,
                  on_affection=None):
@@ -45,7 +46,7 @@ class ChatWindow:
         self._art_h = 360
 
         self.win = tk.Toplevel(root)
-        self.win.title("和文乃聊天 · 宸观 BrightEye")
+        self.win.title("和弥悠聊天 · 宸观 BrightEye")
         self.win.configure(bg=_BG)
         self.win.geometry("680x520")
         self.win.minsize(560, 460)
@@ -71,6 +72,10 @@ class ChatWindow:
         self._type_job = None
         self._idle_job = None
         self._mood = NORMAL
+        # LLM 异步：respond 在后台线程执行，UI 只显示「思考中」动画不卡死
+        self._pending = False
+        self._think_job = None
+        self._think_dots = 0
 
         self._build()
         self._refresh_affection()
@@ -103,7 +108,7 @@ class ChatWindow:
         box.place(relx=0.04, rely=0.62, relwidth=0.92, relheight=0.24)
         inner = tk.Frame(box, bg=_BOX)
         inner.pack(fill="both", expand=True, padx=2, pady=2)
-        name_tag = tk.Label(inner, text="  文乃  ", font=self._f_name,
+        name_tag = tk.Label(inner, text="  弥悠  ", font=self._f_name,
                             bg=_NAME_BG, fg=_BG)
         name_tag.place(x=14, y=-2)
         self.text_lbl = tk.Label(inner, text="", font=self._f_text, bg=_BOX, fg=_FG,
@@ -139,7 +144,7 @@ class ChatWindow:
         self._mood = mood
         if not self._sprites:
             # 无立绘：用情绪色块占位
-            self.art.config(image="", text="文乃", font=self._f_name,
+            self.art.config(image="", text="弥悠", font=self._f_name,
                             fg=MOOD_COLOR.get(mood, "#6FE7FF"),
                             width=14, height=10)
             return
@@ -219,13 +224,53 @@ class ChatWindow:
     def _update_cont(self):
         self.cont_lbl.config(text="点击继续 ▼" if self._queue else "")
 
-    # ---- 发送 / 自动对话 ----
+    # ---- 发送 / 自动对话（LLM 走后台线程，UI 永不冻结）----
     def _send(self):
         text = self.entry.get().strip()
-        if not text:
+        if not text or self._pending:
             return
         self.entry.delete(0, "end")
-        self._push_turn(self.engine.respond(text))
+        self._pending = True
+        self._queue = []
+        if self._type_job is not None:
+            try:
+                self.win.after_cancel(self._type_job)
+            except Exception:
+                pass
+            self._type_job = None
+        self._start_thinking()
+        threading.Thread(target=self._respond_bg, args=(text,),
+                         daemon=True, name="chat-respond").start()
+
+    def _respond_bg(self, text: str):
+        try:
+            turn = self.engine.respond(text)
+        except Exception:
+            turn = None
+        try:
+            self.win.after(0, lambda: self._on_responded(turn))
+        except Exception:
+            pass
+
+    def _on_responded(self, turn):
+        self._pending = False
+        self._stop_thinking()
+        if turn is not None and self.is_alive():
+            self._push_turn(turn)
+
+    def _start_thinking(self):
+        self._think_dots = (self._think_dots % 3) + 1
+        self.text_lbl.config(text="（想了想" + "…" * self._think_dots + "）")
+        self.cont_lbl.config(text="")
+        self._think_job = self.win.after(400, self._start_thinking)
+
+    def _stop_thinking(self):
+        if self._think_job is not None:
+            try:
+                self.win.after_cancel(self._think_job)
+            except Exception:
+                pass
+            self._think_job = None
 
     def _reset_idle(self):
         if self._idle_job is not None:
@@ -236,8 +281,8 @@ class ChatWindow:
         self._idle_job = self.win.after(_IDLE_MS, self._idle_talk)
 
     def _idle_talk(self):
-        # 队列空闲且无打字时，文乃主动开口
-        if not self._queue and self._type_job is None:
+        # 队列空闲、无打字、也不在等大模型回复时，才主动开口
+        if not self._queue and self._type_job is None and not self._pending:
             self._push_turn(self.engine.idle_auto())
         else:
             self._reset_idle()

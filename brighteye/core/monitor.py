@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -26,6 +27,71 @@ from .simulator import SimulatedVisionBackend
 from .system_watch import FullscreenWatcher
 
 _SEV_RANK = {"alert": 2, "warn": 1, "info": 0}
+
+
+class _CameraSampler:
+    """独立采样线程：以固定节奏做 摄像头采集 + MediaPipe 推理 + 眨眼判定。
+
+    把耗时的 read/推理从 UI 主线程剥离：
+      - UI 卡顿不再拖慢采样节奏 → 快速眨眼不漏检、指标帧率稳定；
+      - 推理耗时不再阻塞 UI → 粒子/桌宠不掉帧；
+      - 样本入有界队列，tick() 批量取走，一帧不丢（眨眼事件不吞）。
+    """
+
+    def __init__(self, cap, backend, blink: BlinkCounter, thresholds, fps: int):
+        self._cap = cap
+        self._backend = backend
+        self._blink = blink
+        self._t = thresholds
+        self._interval = 1.0 / max(1, fps)
+        self._q: deque = deque(maxlen=120)
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self.error: Optional[str] = None
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="camera-sampler")
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def drain(self) -> List[FrameSample]:
+        """取走队列中的全部样本（调用方逐个喂给 metrics，不丢眨眼事件）。"""
+        with self._lock:
+            out = list(self._q)
+            self._q.clear()
+        return out
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=2.0)
+
+    def _run(self) -> None:
+        fail = 0
+        while not self._stop.is_set():
+            t0 = time.time()
+            try:
+                ok, frame = self._cap.read()
+                if ok:
+                    fail = 0
+                    s = self._backend.process(frame, self._t, time.time())
+                    s.is_blink_event = self._blink.update(s.ear, s.timestamp)
+                    with self._lock:
+                        self._q.append(s)
+                else:
+                    fail += 1
+                    if fail >= 30:      # 摄像头持续读不到帧 → 线程退出，上层回退
+                        self.error = "摄像头连续读帧失败"
+                        return
+            except Exception as exc:
+                self.error = f"采样线程异常: {exc}"
+                return
+            # 固定节奏：扣除本帧耗时后补眠，保证按 fps_target 稳定采样
+            delay = self._interval - (time.time() - t0)
+            if delay > 0:
+                self._stop.wait(delay)
 
 
 @dataclass
@@ -63,12 +129,15 @@ class Monitor:
         self.metrics = SessionMetrics()
         self.rest = RestTimer(self.t)
         self.advice = AdviceEngine(self.t)
-        self.blink = BlinkCounter(self.t.ear_blink, self.t.ear_consec_frames)
+        self.blink = BlinkCounter(self.t.ear_blink, self.t.ear_consec_frames,
+                                  getattr(self.t, "ear_min_close_sec", 0.10))
 
         self.backend_name = "模拟数据"
         self.fallback_reason = None  # 实时后端失败时记录原因，供上层提示
         self._real = None
         self._cap = None
+        self._sampler: Optional[_CameraSampler] = None  # 独立采样线程（单进程实时模式）
+        self._last_rt = None           # 采样线程暂无新帧时沿用的上一帧
         self._sim = SimulatedVisionBackend(seed=sim_seed, time_scale=sim_time_scale)
         # —— 多进程视觉后端（建议3：性能隔离，--mp-vision 开启）——
         self._use_process = use_process
@@ -163,23 +232,39 @@ class Monitor:
                     cap.release()
                 self.fallback_reason = f"无法打开摄像头(index={camera_index})"
                 return
+            try:
+                # 缓冲区压到 1 帧：读取慢于相机帧率时拿到的仍是最新帧，
+                # 消除 0.3s+ 的画面滞后（部分驱动不支持则忽略）。
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
             self._real = RealVisionBackend()
             self._cap = cap
-            self.backend_name = "摄像头实时检测 (MediaPipe)"
+            # 独立采样线程：采集+推理+眨眼判定按 fps_target 固定节奏运行，
+            # 与 UI 主循环解耦（UI 卡顿不再造成漏检，推理不再拖累 UI）。
+            self._sampler = _CameraSampler(
+                cap, self._real, self.blink, self.t, self.config.fps_target)
+            self._sampler.start()
+            self.backend_name = "摄像头实时检测 (MediaPipe · 采样线程)"
         except Exception as exc:
             self.fallback_reason = f"实时后端初始化异常: {exc}"
             self._real = None
             self._cap = None
             self._worker = None
 
-    def _next_sample(self) -> FrameSample:
+    def _next_samples(self) -> List[FrameSample]:
+        """取本轮全部新样本（至少 1 个；最后一个代表"当前"状态）。
+
+        - 采样线程/子进程模式：批量取走队列样本，眨眼事件一帧不丢；
+        - 无新帧时沿用上一帧（不重复计眨眼）；后端崩溃自动回退模拟器。
+        """
         now = time.time()
         if self._worker is not None:
             s = self._worker.latest()
             if s is not None:
-                s.is_blink_event = self.blink.update(s.ear)
+                s.is_blink_event = self.blink.update(s.ear, s.timestamp)
                 self._last_ws = s
-                return s
+                return [s]
             if not self._worker.alive():
                 # 子进程崩溃 → 永久回退模拟器（铁律：任何失败不影响演示）
                 self.fallback_reason = "视觉子进程已退出，回退模拟数据"
@@ -191,26 +276,41 @@ class Monitor:
                 s = self._last_ws
                 s.is_blink_event = False
                 s.timestamp = now
-                return s
+                return [s]
             else:
                 # 尚未收到首帧 → 先用模拟数据顶住
                 s = self._sim.read(self.t, now)
-                s.is_blink_event = self.blink.update(s.ear)
-                return s
-        if self._real and self._cap:
-            ok, frame = self._cap.read()
-            if ok:
-                s = self._real.process(frame, self.t, now)
-                s.is_blink_event = self.blink.update(s.ear)
-                return s
+                s.is_blink_event = self.blink.update(s.ear, now)
+                return [s]
+        if self._sampler is not None:
+            batch = self._sampler.drain()
+            if batch:
+                self._last_rt = batch[-1]
+                return batch
+            if not self._sampler.alive():
+                # 采样线程退出（摄像头拔出等）→ 回退模拟器
+                self.fallback_reason = self._sampler.error or "采样线程已退出"
+                self.backend_name = "模拟数据"
+                self._sampler = None
+            elif self._last_rt is not None:
+                # 线程健在但本轮暂无新帧 → 沿用上一帧（不重复计眨眼）
+                s = self._last_rt
+                s.is_blink_event = False
+                s.timestamp = now
+                return [s]
+            else:
+                s = self._sim.read(self.t, now)
+                s.is_blink_event = self.blink.update(s.ear, now)
+                return [s]
         # 回退/模拟
         s = self._sim.read(self.t, now)
-        s.is_blink_event = self.blink.update(s.ear)
-        return s
+        s.is_blink_event = self.blink.update(s.ear, now)
+        return [s]
 
     def tick(self) -> Snapshot:
         now = time.time()
-        s = self._next_sample()
+        batch = self._next_samples()
+        s = batch[-1]                     # 最后一帧代表"当前"状态
         # —— 游戏勿扰：前台全屏独占（竞技游戏/放映）→ 本帧自动免打扰 ——
         game = bool(self._fs_watch and self._fs_watch.is_fullscreen())
         self.game_mode = game
@@ -219,14 +319,22 @@ class Monitor:
         if getattr(self.config.emotion, "enabled", True):
             emotion = self.emotion_est.estimate(s.blendshapes)
             s.emotion = emotion
-        self.metrics.add(s, self.t)
+        # 批量入指标：采样线程积压的每一帧都计入（眨眼计数一帧不丢）
+        for sample in batch:
+            self.metrics.add(sample, self.t)
         rest = self.rest.update(s.face_present, s.timestamp)
+
+        # 实时值：距离/颅椎角用短窗（默认 3s）墙钟均值，姿势变化秒级上屏；
+        # 会话级 avg_* 仅供报告使用。
+        rt_win = getattr(self.t, "realtime_window_sec", 3.0)
+        cur_cva = self.metrics.recent_cva(rt_win)
+        cur_tilt = self.metrics.recent_tilt(rt_win)
+        cur_dist = self.metrics.recent_distance(rt_win)
 
         blink_rate = self.metrics.blink_rate_realtime(
             self.t.blink_rate_window_sec, self.t.blink_rate_smooth)
         advices = self.advice.evaluate(
-            blink_rate, self.metrics.avg_cva(), self.metrics.avg_tilt(),
-            self.metrics.avg_distance(), rest,
+            blink_rate, cur_cva, cur_tilt, cur_dist, rest,
         )
         next_break = max(
             0.0, self.t.break_interval_min * 60 - rest.since_last_break_sec)
@@ -288,8 +396,8 @@ class Monitor:
             face_present=s.face_present,
             blink_rate=blink_rate,
             blink_total=self.metrics.blink_count,
-            cva=self.metrics.avg_cva(),
-            distance=self.metrics.avg_distance(),
+            cva=cur_cva,
+            distance=cur_dist,
             screen_time_min=rest.screen_time_sec / 60.0,
             continuous_use_min=rest.continuous_use_sec / 60.0,
             next_break_in_sec=next_break,
@@ -370,6 +478,12 @@ class Monitor:
             except Exception:
                 pass
             self._worker = None
+        if self._sampler:
+            try:
+                self._sampler.close()   # 先停采样线程，再释放摄像头（避免竞态）
+            except Exception:
+                pass
+            self._sampler = None
         if self._cap:
             try:
                 self._cap.release()

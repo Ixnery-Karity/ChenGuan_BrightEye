@@ -219,6 +219,7 @@ class DashboardApp:
         theme_mod.save_theme_name(self._theme_name, self._data_dir)
         self.root.configure(bg=self.T["bg"])
         self._mode_btns.clear()
+        self._adv_sig = None   # 建议区签名失效，随新主题重绘
         try:
             self.bg.destroy()
         except Exception:
@@ -333,6 +334,21 @@ class DashboardApp:
         c["glow"].config(bg=color)
 
     def _render_advices(self, snap) -> None:
+        # —— 差量渲染：内容签名不变则完全不动 widget ——
+        # 旧实现每次刷新(≈15次/秒)都 destroy 全部子控件再重建，
+        # 造成建议文字持续闪烁；现在只有内容真正变化才重建一次。
+        items = snap.strict_alerts if (snap.mode == "strict" and snap.strict_alerts) else None
+        if items:
+            sig = tuple(("strict", a.title, a.detail, a.severity, a.color)
+                        for a in items)
+        elif snap.advices:
+            sig = tuple(("adv", a.title, a.detail, a.level.value)
+                        for a in snap.advices)
+        else:
+            sig = ("ok",)
+        if sig == getattr(self, "_adv_sig", None):
+            return
+        self._adv_sig = sig
         for w in self.adv_box.winfo_children():
             w.destroy()
         # 严格模式优先展示带升级严重度的提醒

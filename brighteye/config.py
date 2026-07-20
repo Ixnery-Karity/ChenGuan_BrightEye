@@ -4,7 +4,12 @@
 按个体校准。阈值集中管理，便于演示时现场调参。
 """
 
+import os
 from dataclasses import dataclass, field
+
+# 包目录锚点：data/reports 固定放在 brighteye/ 之下，
+# 与启动时的工作目录无关（避免从不同目录启动产生多套数据）。
+_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 @dataclass
@@ -16,6 +21,10 @@ class Thresholds:
     blink_rate_normal: float = 15.0  # 正常静息约15-20次/分钟
     blink_rate_window_sec: float = 30.0  # 实时眨眼频率的滚动统计窗口(秒)，窗口越短越灵敏
     blink_rate_smooth: float = 0.2       # 显示值的指数平滑系数(0~1)，抑制窗口边缘抖动
+    ear_min_close_sec: float = 0.10      # 闭眼墙钟时长兜底(秒)：掉帧时快速眨眼也能判定
+
+    # 实时显示 ---------------------------------------------------------
+    realtime_window_sec: float = 3.0     # 距离/颅椎角实时值的短窗均值窗口(秒)，短=灵敏
 
     # 摄像头标定 ------------------------------------------------------
     camera_hfov_deg: float = 60.0    # 假定的水平视场角(度)，用于由画面宽度推导焦距(分辨率无关)
@@ -130,7 +139,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.13.0-demo"
+    version: str = "1.14.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)
@@ -140,8 +149,8 @@ class AppConfig:
 
     # 运行参数
     fps_target: int = 15             # 摄像头/模拟器目标帧率
-    data_dir: str = "data"
-    report_dir: str = "reports"
+    data_dir: str = os.path.join(_PKG_DIR, "data")
+    report_dir: str = os.path.join(_PKG_DIR, "reports")
 
     # 默认运行模式（companion/strict/review/silent）
     default_mode: str = "companion"

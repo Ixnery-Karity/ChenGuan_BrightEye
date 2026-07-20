@@ -33,11 +33,13 @@ class SessionMetrics:
     frames: int = 0
     face_frames: int = 0
 
-    # 滚动窗口：眨眼保留近 5 分钟事件以支持可调窗口；姿态/距离用约 20s 窗口兼顾实时与稳定
+    # 滚动窗口：眨眼保留近 5 分钟事件以支持可调窗口；
+    # 姿态/距离存 (timestamp, value)：avg_* 供报告(约20s窗)，
+    # recent_* 按墙钟时间取短窗（~3s）供实时显示（不受帧率波动影响）。
     _blink_times: Deque[float] = field(default_factory=lambda: deque(maxlen=600))
-    _cva: Deque[float] = field(default_factory=lambda: deque(maxlen=300))
-    _tilt: Deque[float] = field(default_factory=lambda: deque(maxlen=300))
-    _dist: Deque[float] = field(default_factory=lambda: deque(maxlen=300))
+    _cva: Deque[tuple] = field(default_factory=lambda: deque(maxlen=300))
+    _tilt: Deque[tuple] = field(default_factory=lambda: deque(maxlen=300))
+    _dist: Deque[tuple] = field(default_factory=lambda: deque(maxlen=300))
 
     # 累计的"不良状态"秒数，用于报告
     bad_posture_seconds: float = 0.0
@@ -76,13 +78,13 @@ class SessionMetrics:
             self._blink_times.append(now)
 
         if s.cva is not None:
-            self._cva.append(s.cva)
+            self._cva.append((now, s.cva))
             if s.cva < thresholds.cva_warning:
                 self.bad_posture_seconds += dt
         if s.shoulder_tilt is not None:
-            self._tilt.append(s.shoulder_tilt)
+            self._tilt.append((now, s.shoulder_tilt))
         if s.distance_cm is not None:
-            self._dist.append(s.distance_cm)
+            self._dist.append((now, s.distance_cm))
             if s.distance_cm < thresholds.distance_min_cm:
                 self.too_close_seconds += dt
 
@@ -104,8 +106,8 @@ class SessionMetrics:
             self.timeline.append((
                 round(now, 1),
                 round(self.blink_rate_recent(30.0), 1),
-                round(self._dist[-1], 1) if self._dist else None,
-                round(self._cva[-1], 1) if self._cva else None,
+                round(self._dist[-1][1], 1) if self._dist else None,
+                round(self._cva[-1][1], 1) if self._cva else None,
             ))
         # 2) 分小时用眼/不良负荷（热力图·风险时段）
         if s.face_present and dt > 0:
@@ -170,8 +172,22 @@ class SessionMetrics:
         return self.blink_count / self.elapsed_min if self.elapsed_min else 0.0
 
     @staticmethod
-    def _avg(d: Deque[float]) -> Optional[float]:
-        return sum(d) / len(d) if d else None
+    def _avg(d: Deque[tuple]) -> Optional[float]:
+        return sum(v for _, v in d) / len(d) if d else None
+
+    @staticmethod
+    def _recent(d: Deque[tuple], window_sec: float) -> Optional[float]:
+        """近 window_sec 秒内样本的均值；无样本时回退最近一次观测值。
+
+        按墙钟时间截窗，帧率波动/卡顿不会拉长实际窗口，保证实时性。
+        """
+        if not d:
+            return None
+        now = time.time()
+        vals = [v for t, v in d if now - t <= window_sec]
+        if vals:
+            return sum(vals) / len(vals)
+        return d[-1][1]
 
     def avg_cva(self) -> Optional[float]:
         return self._avg(self._cva)
@@ -181,6 +197,17 @@ class SessionMetrics:
 
     def avg_distance(self) -> Optional[float]:
         return self._avg(self._dist)
+
+    def recent_cva(self, window_sec: float = 3.0) -> Optional[float]:
+        """实时颅椎角：近几秒短窗均值（姿势变化秒级反映到界面）。"""
+        return self._recent(self._cva, window_sec)
+
+    def recent_tilt(self, window_sec: float = 3.0) -> Optional[float]:
+        return self._recent(self._tilt, window_sec)
+
+    def recent_distance(self, window_sec: float = 3.0) -> Optional[float]:
+        """实时用眼距离：近几秒短窗均值（前倾靠近立刻可见）。"""
+        return self._recent(self._dist, window_sec)
 
     def face_ratio(self) -> float:
         return self.face_frames / self.frames if self.frames else 0.0

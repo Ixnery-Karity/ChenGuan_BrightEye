@@ -42,6 +42,11 @@ def _worker_main(camera_index: int, thresholds, fps_target: int,
         if not cap or not cap.isOpened():
             q.put(("status", f"err:无法打开摄像头(index={camera_index})"))
             return
+        try:
+            # 缓冲区压到 1 帧：消除读取慢于相机帧率时的画面滞后
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
         backend = RealVisionBackend()
         q.put(("status", "ready"))
     except Exception as exc:  # 初始化失败 → 报告后退出，父进程回退

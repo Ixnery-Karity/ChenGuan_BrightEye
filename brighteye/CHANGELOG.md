@@ -5,6 +5,60 @@
 
 ---
 
+## v1.14.0-demo — 2026-07-20
+
+六件事一次做完：数据/报告目录统一、卡顿与眨眼漏检根治（独立采样线程）、
+距离/颅椎角实时化、摄像头缓冲滞后消除、健康建议文字闪烁修复、
+启动慢/卡顿根因分析成文。
+
+### 修复（核心：采样与 UI 解耦）
+- **独立采样线程 `_CameraSampler`**（`core/monitor.py`，任务2/3/4）：
+  旧架构单进程模式下「摄像头读帧 + MediaPipe 推理 + 眨眼判定」全在
+  tkinter 主线程的 `tick()` 里串行执行——推理卡 UI（粒子掉帧），UI 忙时
+  采样率又从 15fps 掉到个位数，快速眨眼（100~300ms）只覆盖 1 帧、
+  旧判据「连续 2 帧闭眼」直接漏检（正是"之前精度够、现在不行了"的根因）。
+  现改为专线程按 `fps_target` 固定节奏采样，样本入有界队列，`tick()`
+  批量取走逐帧入指标（眨眼事件一帧不丢）；线程崩溃/摄像头拔出自动回退
+  模拟器，铁律不破。后端名显示「摄像头实时检测 (MediaPipe · 采样线程)」。
+- **眨眼判据加墙钟兜底**（`core/blink_counter.py`，任务3）：帧数判据
+  （≥2 帧）之外，闭眼墙钟时长 ≥0.10s（`thresholds.ear_min_close_sec`）
+  也计一次眨眼——偶发掉帧下快速眨眼也不漏，正常帧率行为不变。
+- **摄像头缓冲压到 1 帧**（`monitor.py` + `vision/worker.py`，任务4）：
+  `CAP_PROP_BUFFERSIZE=1`，读取慢于相机帧率时拿到的仍是最新帧，
+  消除 0.3s+ 画面滞后（不支持的驱动自动忽略）。
+- **距离/颅椎角实时化**（`core/metrics.py`，任务5）：姿态/距离 deque 改存
+  `(timestamp, value)`，新增 `recent_cva/recent_tilt/recent_distance`
+  ——按墙钟时间取近 3 秒（`thresholds.realtime_window_sec`）短窗均值，
+  界面数值与实时建议秒级响应姿势变化；原 20 秒全窗均值 `avg_*` 仅保留给
+  会话报告，统计口径不变。
+- **健康建议文字闪烁修复**（`ui/app.py`，任务6）：`_render_advices` 旧实现
+  每次刷新（≈15 次/秒）destroy 全部子控件再重建 → 闪烁；改为**差量渲染**
+  ——内容签名（条目文本+严重度+颜色）不变则完全不动 widget，只有建议
+  真正变化才重建一次；切主题时签名失效保证重绘。
+
+### 新增
+- **data/reports 目录统一**（`config.py`，任务1）：`data_dir`/`report_dir`
+  由相对 cwd 路径改为**锚定 brighteye 包目录的绝对路径**——从任何目录
+  启动（challenge/、桌面快捷方式、打包 exe）数据都落在 `brighteye/data`
+  与 `brighteye/reports`，不再散落两套；旧 challenge/data（history.db、
+  ui_theme.json）与 challenge/reports（24 份 HTML）已迁移合并入
+  brighteye/ 下并删除旧目录。全部消费方（history/sync/theme/chat_engine/
+  health_report/period_report/ui）均经 config 取值，一处修改全局生效。
+- **性能分析文档** `docs/启动与卡顿性能分析.md`（任务2）：启动耗时分布
+  （mediapipe/cv2 import 2~5s 是大头）、卡顿三连锁根因（推理卡 UI ↔ UI
+  卡采样 ↔ 缓冲滞后）、线程 vs 进程选型（默认线程：MediaPipe C++ 层
+  释放 GIL 真并行；`--mp-vision` 进程隔离备用）；结论：慢和卡不是
+  "功能太多"，换语言不能让检测更快，进一步提速走 Nuitka（参见
+  Golang 重写调研方案 D）。
+
+### 变更
+- `config.py`：`Thresholds` 新增 `ear_min_close_sec=0.10`、
+  `realtime_window_sec=3.0`；版本 1.13.0 → **1.14.0**。
+- `core/monitor.py`：`_next_sample()` 改为批量 `_next_samples()`；
+  `Snapshot.cva/distance` 改用短窗实时值；`close()` 先停采样线程再释放摄像头。
+
+---
+
 ## v1.13.0-demo — 2026-07-20
 
 五件事：双击图标无窗口启动（VBS 启动器 + 桌面快捷方式，彻底告别命令行与

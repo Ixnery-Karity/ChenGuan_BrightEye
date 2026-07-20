@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.13.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.14.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -69,7 +69,9 @@ python -m brighteye.main --report weekly
 python -m brighteye.main --report monthly
 ```
 
-报告输出在 `reports/` 目录（HTML，可直接截图进 PPT）。
+报告输出在 `brighteye/reports/` 目录（HTML，可直接截图进 PPT）；监测历史
+与偏好在 `brighteye/data/`。**v1.14.0 起两目录锚定包路径**，从任何目录
+启动都不会散落多套数据。
 
 ### 四种运行模式（顶部一键切换 / 桌宠右键切换）
 | 模式 | 说明 |
@@ -155,6 +157,10 @@ python -m brighteye.main --camera 1   # 指定摄像头索引(多摄像头时)
 > 实时检测基于 MediaPipe **Tasks API**，需 `.task` 模型文件，已随仓库放在
 > `brighteye/assets/models/`（face_landmarker.task、pose_landmarker_lite.task）。
 > 程序启动时会打印实际数据源；若回退模拟会给出原因提示。
+> **v1.14.0 起单进程模式也用独立采样线程**：采集+推理与 UI 解耦，按
+> `fps_target` 固定节奏采样——UI 卡顿不再造成眨眼漏检，推理不再拖累界面；
+> 距离/颅椎角实时值改用近 3 秒短窗（姿势变化秒级上屏），摄像头缓冲压到
+> 1 帧消除画面滞后。性能根因分析见 `docs/启动与卡顿性能分析.md`。
 
 ## 三、技术架构
 
@@ -174,6 +180,7 @@ brighteye/
 │   ├── 多端数据同步API.md        局域网同步接口定义与手机端对接
 │   ├── 皮肤系统设计方案.md       界面上传立绘/soul.md 皮肤包设计（v1.12 规划）
 │   ├── Golang重写方案调研.md     Go/Rust/Nuitka 重写路线对比（v1.13 调研，不整改）
+│   ├── 启动与卡顿性能分析.md     启动耗时分布 + 卡顿根因 + 线程/进程选型（v1.14）
 │   ├── 桌宠技术栈调研_天选姬.md  天选姬 Unity+Live2D+Win32 实现与迁移路线（v1.13 调研）
 │   └── UI技术栈升级路线.md       PySide6 / Tauri 迁移规划
 ├── llm_models/

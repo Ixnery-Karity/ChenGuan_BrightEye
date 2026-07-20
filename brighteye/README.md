@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.12.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.13.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -25,11 +25,22 @@
 本机若未安装摄像头或 mediapipe，程序会**自动回退到内置模拟器**，完整跑通
 「监测 → 实时建议 → 健康报告」全链路，可直接用于答辩演示。
 
+### 双击启动（v1.13.0 推荐 · 无命令行窗口）
+
+- 双击 **`brighteye/启动宸观BrightEye.vbs`** —— 以 pythonw 无窗口启动，
+  全程不出现任何命令提示符；启动待机期展示 **Q 版弥悠加载页**（科技感扫描环）。
+- 双击 **`brighteye/创建桌面快捷方式.vbs`** —— 在桌面生成带 Q 版弥悠图标的
+  「宸观 BrightEye」快捷方式，此后从桌面双击图标即可启动。
+- 打包版（`python -m brighteye.tools.build_exe`）本身就是 `--windowed` exe，
+  天然无控制台。
+
+### 命令行启动（开发/调参）
+
 ```bash
 # 进入项目根目录（challenge/）
 cd challenge
 
-# 1) 图形仪表盘（推荐演示）—— 自动选择后端 + 悬浮桌宠「文乃」常驻陪伴
+# 1) 图形仪表盘（推荐演示）—— 自动选择后端 + 悬浮桌宠「弥悠」常驻陪伴
 python -m brighteye.main
 
 # 2) 强制模拟数据（无摄像头时）
@@ -152,12 +163,18 @@ brighteye/
 ├── main.py              入口（参数解析 / headless 自测）
 ├── config.py            全局配置与健康阈值（集中可调 + LLM/Guardian/Emotion 三段配置）
 ├── CHANGELOG.md         版本更新日志（每次发版同步登记）
+├── 启动宸观BrightEye.vbs    双击无窗口启动器（pythonw，零命令行，v1.13.0）
+├── 创建桌面快捷方式.vbs      桌面生成带图标快捷方式（v1.13.0）
+├── assets/
+│   └── app_icon.png/.ico    Q 版弥悠软件图标（窗口/任务栏/打包/快捷方式全链路）
 ├── docs/
 │   ├── 弥悠人设.md               桌宠原创人设档案（Soul 文档，台词/配色依据）
 │   ├── 大模型接入与部署指南.md   Ollama / 云端 API / 离线兜底三方案
 │   ├── 打包发布指南_一键安装包.md PyInstaller + Inno Setup 一键打包
 │   ├── 多端数据同步API.md        局域网同步接口定义与手机端对接
 │   ├── 皮肤系统设计方案.md       界面上传立绘/soul.md 皮肤包设计（v1.12 规划）
+│   ├── Golang重写方案调研.md     Go/Rust/Nuitka 重写路线对比（v1.13 调研，不整改）
+│   ├── 桌宠技术栈调研_天选姬.md  天选姬 Unity+Live2D+Win32 实现与迁移路线（v1.13 调研）
 │   └── UI技术栈升级路线.md       PySide6 / Tauri 迁移规划
 ├── llm_models/
 │   ├── README.md        模型获取说明（8.8GB 超 GitHub 限制 → 脚本分发）
@@ -190,6 +207,7 @@ brighteye/
 └── ui/
     ├── app.py           Tkinter 实时仪表盘（双主题 + 粒子背景 + 模式切换 + 强制遮罩）
     ├── theme.py         双主题配色 token（弥悠·星夜 / 弥悠·奶糖，🎨 切换持久化）
+    ├── splash.py        启动加载页（Q 版弥悠 + 科技感扫描环，后端就绪即收起，v1.13.0）
     ├── chat.py          galgame 风桌宠聊天窗口
     ├── particles.py     Canvas 粒子背景（星座连线 + 状态变色 + 帧耗时自适应降载）
     └── pet.py           悬浮桌宠「弥悠」（透明置顶可拖拽 + 差分立绘/矢量兜底）

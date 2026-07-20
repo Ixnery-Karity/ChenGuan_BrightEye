@@ -5,6 +5,55 @@
 
 ---
 
+## v1.13.0-demo — 2026-07-20
+
+五件事：双击图标无窗口启动（VBS 启动器 + 桌面快捷方式，彻底告别命令行与
+cmd 闪现）、Q 版弥悠软件图标全链路接入、启动加载页（Q 版弥悠 + 科技感
+扫描环）、Golang 重写方案调研、天选姬桌宠技术栈调研（后两项仅出文档不整改）。
+
+### 新增
+- **双击无窗口启动**（任务3/4/7）：
+  - `brighteye/启动宸观BrightEye.vbs`：双击即以 **pythonw**（GUI 版解释器，
+    无控制台）启动软件，`WScript.Shell.Run ..., 0, False` 隐藏窗口不等待；
+    pythonw 缺失自动回退 python，仍失败弹中文提示；UTF-16 编码保证中文注释
+    不乱码；工作目录自动定位 challenge/。
+  - `brighteye/创建桌面快捷方式.vbs`：双击在桌面生成「宸观 BrightEye」
+    快捷方式（目标 wscript + 启动器，图标取 assets/app_icon.ico）。
+  - **修复 cmd 弹窗闪现**（`core/llm_client.py`）：拉起 Ollama 的旧
+    creationflags `DETACHED_PROCESS | CREATE_NO_WINDOW` 两标志同管控制台
+    分配、按 Windows 文档互斥（行为未定义，正是黑窗闪现来源之一）——改为
+    `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` + `STARTUPINFO(SW_HIDE)`
+    双保险；全项目 subprocess 仅此一处运行期调用，已全量排查。
+  - `main.py` 在 pythonw 下安全：stdout/stderr 为 None 时 reconfigure 已被
+    try 包住、print 为无害 no-op（CPython 行为），实测 pythonw 启动 UI 正常。
+- **Q 版弥悠软件图标**（任务6）：用户提供的 Q 版弥悠立绘裁剪入库——
+  `assets/app_icon.png`（512×512）+ `assets/app_icon.ico`（16~256 七尺寸）；
+  仪表盘 `iconphoto(True, ...)` 接入标题栏/任务栏（Toplevel 同步继承），
+  打包链路 `build_exe.py prepare_icon()`（v1.12.0 已就绪）自动生效。
+- **启动加载页** `ui/splash.py`（任务5）：视觉后端后台加载的数秒里，全窗
+  覆盖待机页——中央 Q 版弥悠头像（PNG 缺失走矢量猫耳兜底）+ 双层反向旋转
+  扫描弧 + 呼吸光点绕环 + 「正在唤醒弥悠 ···」状态动效，固定星夜暗色配色；
+  后端就绪（backend 不再含「加载中」）即收起（6 帧缩圈动画），最短展示
+  1.2s 防闪过、25s 兜底超时绝不卡界面；主循环 30fps 驱动，零新增依赖。
+- **Golang 重写方案调研** `docs/Golang重写方案调研.md`（任务1，仅方案）：
+  先定位瓶颈——MediaPipe 推理已是 C++ 原生速度，换语言提速的是 UI/启动/
+  体积而非检测；对比 Go+Wails+Python视觉sidecar（推荐的 Go 路线，4~6 周）/
+  纯 Go GoCV+ONNX（blendshapes 无替代，不建议）/ Rust+Tauri / Python+Nuitka
+  编译（体积-43% 启动-34%，2~4 天最低成本）；结论：比赛期不重写，可选
+  Nuitka，产品化再上 Go+Wails。
+- **天选姬桌宠技术栈调研** `docs/桌宠技术栈调研_天选姬.md`（任务2，仅调研）：
+  天选姬 = **Unity + Live2D Cubism + Win32 三件套**（WS_EX_LAYERED 分层
+  透明、LWA_COLORKEY/DWM 抠背景、全局鼠标钩子做像素级选择性点透、
+  WS_EX_TOOLWINDOW+托盘）；横向对比 Unity(~800MB)/Electron+pixi-live2d-display
+  (<100MB)/原生 C++(~50MB)/现状 tkinter；建议演示期保留 tkinter，产品化走
+  Electron/Tauri + Live2D 独立桌宠进程（WebSocket 读监测数据，跨语言解耦）。
+
+### 变更
+- `ui/app.py`：新增窗口图标加载与 SplashOverlay 接入（`_loop` 驱动动画、
+  `_refresh` 判定收起）；`config.py` 版本 1.12.0 → **1.13.0**。
+
+---
+
 ## v1.12.0-demo — 2026-07-19
 
 四件事：Ollama 随软件自动启动（大模型再不"失联"）、大模型一键安装脚本分发

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from tkinter import font as tkfont
 
@@ -26,6 +27,7 @@ from . import theme as theme_mod
 from .chat import ChatWindow
 from .particles import ParticleField
 from .pet import FloatingPet
+from .splash import SPLASH_MAX_SEC, SplashOverlay
 
 # 情绪 → (粒子 rgb, 速度)
 _MOOD_FX = {
@@ -49,6 +51,15 @@ class DashboardApp:
         self.root.configure(bg=self.T["bg"])
         self.root.geometry("900x640")
         self.root.minsize(820, 600)
+        # —— 窗口图标（v1.13.0：Q 版弥悠，标题栏/任务栏；缺失静默跳过）——
+        try:
+            _ico = os.path.normpath(os.path.join(
+                os.path.dirname(__file__), "..", "assets", "app_icon.png"))
+            if os.path.isfile(_ico):
+                self._app_icon = tk.PhotoImage(file=_ico)
+                self.root.iconphoto(True, self._app_icon)   # True=Toplevel 同步继承
+        except Exception:
+            pass
 
         self._f_logo = tkfont.Font(family="Microsoft YaHei", size=22, weight="bold")
         self._f_sub = tkfont.Font(family="Microsoft YaHei", size=10)
@@ -70,6 +81,12 @@ class DashboardApp:
                             if CONFIG.system.brightness_enabled else None)
 
         self._build()
+        # —— 启动加载页（v1.13.0）：视觉后端后台加载期间的 Q 版弥悠待机页；
+        #    后端就绪(backend 不再含「加载中」)或超时后收起，异常直接不挡界面 ——
+        try:
+            self._splash = SplashOverlay(self.root)
+        except Exception:
+            self._splash = None
         self.chat_engine = ChatEngine(config=CONFIG)
         if getattr(CONFIG.llm, "warmup_enabled", True):
             self.chat_engine.warm_up_async()   # 后台预热聊天模型，首条对话不再冷启动
@@ -237,6 +254,11 @@ class DashboardApp:
             return
         self._frame += 1
         self.pf.step()
+        if self._splash is not None:
+            if self._splash.alive:
+                self._splash.tick("视觉引擎与摄像头加载中")
+            else:
+                self._splash = None
         step = max(1, int(round(30 / max(1, CONFIG.fps_target))))
         if self._frame % step == 0:
             self._refresh()
@@ -244,6 +266,11 @@ class DashboardApp:
 
     def _refresh(self) -> None:
         snap = self.m.tick()
+        # 启动加载页收起判定：后端就绪 or 兜底超时
+        if self._splash is not None and self._splash.alive:
+            loading = "加载中" in (snap.backend or "")
+            if (not loading) or self._frame > SPLASH_MAX_SEC * 30:
+                self._splash.request_close()
         backend_txt = f"数据源：{snap.backend}"
         if snap.game_mode:
             backend_txt += "   🎮 检测到全屏应用 · 已自动勿扰"

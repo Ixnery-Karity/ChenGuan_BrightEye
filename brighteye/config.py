@@ -130,7 +130,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.12.0-demo"
+    version: str = "1.13.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)

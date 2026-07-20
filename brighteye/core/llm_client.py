@@ -57,8 +57,15 @@ def _try_start_ollama() -> bool:
     try:
         kwargs = {}
         if os.name == "nt":
-            # DETACHED_PROCESS | CREATE_NO_WINDOW：随软件启动、不弹黑窗、软件退出后仍存活
-            kwargs["creationflags"] = 0x00000008 | 0x08000000
+            # CREATE_NO_WINDOW(0x08000000)：不给子进程弹控制台窗口；
+            # CREATE_NEW_PROCESS_GROUP(0x200)：脱离本进程的 Ctrl+C 组、软件退出后仍存活。
+            # 注意：不能再叠加 DETACHED_PROCESS(0x8)——它与 CREATE_NO_WINDOW 同管
+            # 控制台分配、按文档互斥，旧组合正是启动时黑窗闪现的来源之一。
+            kwargs["creationflags"] = 0x08000000 | 0x00000200
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW   # 双保险：显式要求隐藏窗口
+            si.wShowWindow = 0                              # SW_HIDE
+            kwargs["startupinfo"] = si
         else:
             kwargs["start_new_session"] = True
         subprocess.Popen([exe, "serve"],

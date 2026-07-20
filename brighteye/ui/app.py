@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import tkinter as tk
 from tkinter import font as tkfont
 
@@ -28,6 +29,7 @@ from .chat import ChatWindow
 from .particles import ParticleField
 from .pet import FloatingPet
 from .splash import SPLASH_MAX_SEC, SplashOverlay
+from .tray import TrayIcon
 
 # 情绪 → (粒子 rgb, 速度)
 _MOOD_FX = {
@@ -85,6 +87,9 @@ class DashboardApp:
         #    后端就绪(backend 不再含「加载中」)或超时后收起，异常直接不挡界面 ——
         try:
             self._splash = SplashOverlay(self.root)
+            # 强制首帧立即上屏：否则加载页要等 __init__ 全部跑完进 mainloop
+            # 才被绘制——用户会先干等一分钟才看到加载页（任务5）。
+            self.root.update()
         except Exception:
             self._splash = None
         self.chat_engine = ChatEngine(config=CONFIG)
@@ -101,6 +106,22 @@ class DashboardApp:
                         for m in MODE_ORDER],
         )
         self._sync_mode_ui()
+
+        # —— 系统托盘图标（v1.15.0）：右下角通知区域常驻进程入口 ——
+        # 左键=打开仪表盘；右键=菜单（仪表盘/聊天/四模式打勾/退出）。
+        # 纯 ctypes 实现零新依赖；非 Windows / 失败自动降级为无托盘。
+        self.tray = None
+        if getattr(CONFIG.system, "tray_enabled", True):
+            try:
+                _ico = os.path.normpath(os.path.join(
+                    os.path.dirname(__file__), "..", "assets", "app_icon.ico"))
+                self.tray = TrayIcon(
+                    tooltip=f"{CONFIG.app_name} · {CONFIG.subtitle}",
+                    icon_path=_ico if os.path.isfile(_ico) else None,
+                    menu_provider=self._tray_menu,
+                    default_action="open")
+            except Exception:
+                self.tray = None
 
         self._running = True
         self.root.protocol("WM_DELETE_WINDOW", self._hide_dashboard)
@@ -249,11 +270,44 @@ class DashboardApp:
             else:
                 self.pet.show()
 
+    # ---- 系统托盘 -----------------------------------------------------
+    def _tray_menu(self):
+        """托盘右键菜单项（托盘线程调用，只读状态不碰 UI）。"""
+        cur = self.m.mode.value
+        items = [("open", "🖥 打开仪表盘", False),
+                 ("chat", "💬 和弥悠聊天", False),
+                 (None, "", False)]
+        for m in MODE_ORDER:
+            name, emoji, _ = MODE_META[m]
+            items.append((f"mode:{m.value}", f"{emoji} {name}", m.value == cur))
+        items.append((None, "", False))
+        items.append(("quit", "⏻ 退出宸观", False))
+        return items
+
+    def _handle_tray_actions(self) -> None:
+        """主线程执行托盘动作（tray.poll 取回队列里的 key）。"""
+        if self.tray is None:
+            return
+        for key in self.tray.poll():
+            if key == "open":
+                self._open_dashboard()
+            elif key == "chat":
+                self._open_chat()
+            elif key == "quit":
+                self._quit()
+                return
+            elif key.startswith("mode:"):
+                try:
+                    self._switch_mode(key.split(":", 1)[1])
+                except Exception:
+                    pass
+
     # ---- 主循环（粒子 30fps，指标按 fps_target 节流）-----------------
     def _loop(self) -> None:
         if not self._running:
             return
         self._frame += 1
+        self._handle_tray_actions()
         self.pf.step()
         if self._splash is not None:
             if self._splash.alive:
@@ -537,22 +591,61 @@ class DashboardApp:
         self.root.withdraw()
 
     def _quit(self) -> None:
+        """异步退出：窗口立即消失，收尾(保存报告+关摄像头)搬到后台线程。
+        save_report 内含 deepseek-r1 AI 洞察请求(超时上限 90s)，同步跑会让
+        点退出后窗口停留半分钟(任务4)；改为后台跑，主线程轮询结束后再销毁。"""
+        if not self._running:
+            return
         self._running = False
+        if self.tray is not None:      # 先摘托盘图标，避免退出后残留幽灵图标
+            try:
+                self.tray.close()
+            except Exception:
+                pass
         if self._brightness is not None:
             try:
                 self._brightness.restore()  # 遮罩期间退出也要恢复亮度
             except Exception:
                 pass
+        # 立即让界面消失，用户体感"秒退"
         try:
-            path = save_report(self.m.metrics, CONFIG)
-            print(f"\n[报告已保存] {path}")
-        finally:
+            self.pet.destroy()
+        except Exception:
+            pass
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+
+        done = threading.Event()
+
+        def finalize():
             try:
-                self.pet.destroy()
-            except Exception:
-                pass
-            self.m.close()
-            self.root.destroy()
+                path = save_report(self.m.metrics, CONFIG)
+                print(f"\n[报告已保存] {path}")
+            except Exception as e:
+                print(f"\n[报告保存失败] {e}")
+            finally:
+                try:
+                    self.m.close()
+                except Exception:
+                    pass
+                done.set()
+
+        threading.Thread(target=finalize, name="quit-finalizer", daemon=True).start()
+
+        def poll():
+            if done.is_set():
+                try:
+                    self.root.destroy()
+                except Exception:
+                    pass
+                return
+            self.root.after(150, poll)
+
+        # 兜底：收尾最长等 12s，超时也强制销毁，绝不让进程挂死
+        self.root.after(150, poll)
+        self.root.after(12000, lambda: (done.is_set() or self.root.destroy()))
 
     def run(self) -> None:
         self.root.mainloop()

@@ -9,7 +9,15 @@ from dataclasses import dataclass, field
 
 # 包目录锚点：data/reports 固定放在 brighteye/ 之下，
 # 与启动时的工作目录无关（避免从不同目录启动产生多套数据）。
-_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+# 打包(frozen)运行时安装目录通常不可写(Program Files)，
+# 改锚 %LOCALAPPDATA%/ChenguanBrightEye —— 安装版数据的标准归宿。
+import sys as _sys
+if getattr(_sys, "frozen", False):
+    _PKG_DIR = os.path.join(
+        os.environ.get("LOCALAPPDATA")
+        or os.path.expanduser("~"), "ChenguanBrightEye")
+else:
+    _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 @dataclass
@@ -119,6 +127,7 @@ class SystemConfig:
     """
     game_mode_enabled: bool = True
     game_poll_sec: float = 2.0           # 前台全屏检测节流间隔(秒)
+    tray_enabled: bool = True            # 系统托盘图标(右下角通知区域)，非 Windows 自动禁用
     brightness_enabled: bool = False     # 默认关：装了 monitorcontrol 再开
     rest_dim_percent: int = 35           # 强制休息期间调暗到的亮度(%)
 
@@ -139,7 +148,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.14.0-demo"
+    version: str = "1.15.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)

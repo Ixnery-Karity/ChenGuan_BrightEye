@@ -29,7 +29,28 @@ import subprocess
 import sys
 
 APP_NAME = "宸观BrightEye"
-ENTRY = "brighteye/main.py"
+# PyInstaller 入口不能直接用 brighteye/main.py：它会被当顶层脚本运行，
+# main.py 里的相对导入(from .config …)因无父包而 ImportError。
+# 改为打包时生成绝对导入的启动器 build_entry.py（含 frozen 多进程 freeze_support）。
+ENTRY = "build_entry.py"
+
+ENTRY_CODE = '''"""PyInstaller 打包入口（由 build_exe.py 生成，勿手改）。"""
+import multiprocessing
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()   # frozen + spawn 子进程(--mp-vision)必需
+    from brighteye.main import main
+    main()
+'''
+
+# 排除重型库：--collect-all mediapipe 会把 mediapipe.tasks.python.genai
+# （LLM 权重转换器，本项目不用）也收进来，连带拖入 torch(4GB+)/transformers
+# 等，安装包从 ~600MB 膨胀到近 5GB。这些模块运行期从不导入，安全排除。
+EXCLUDES = [
+    "torch", "torchvision", "torchaudio", "transformers", "tokenizers",
+    "safetensors", "pyarrow", "onnxruntime", "scipy", "pandas",
+    "IPython", "jedi", "sympy",
+]
 
 # 本文件位于 brighteye/tools/，项目根 = 上上级目录
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -44,8 +65,13 @@ AppPublisher=宸观科技团队
 DefaultDirName={{autopf}}\ChenguanBrightEye
 DefaultGroupName=宸观 BrightEye
 UninstallDisplayIcon={{app}}\{app_name}.exe
+OutputDir=dist_installer
 OutputBaseFilename={app_name}_Setup_v{version}
 {setup_icon_line}
+; 免管理员安装：普通用户直接装到 %LOCALAPPDATA%\Programs（数据目录天然可写），
+; 需要装 Program Files 时安装向导会自行请求提权。
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -106,12 +132,46 @@ def write_iss(version: str, icon_path: str = "") -> str:
     return path
 
 
+def find_iscc() -> str:
+    """定位 Inno Setup 6 编译器 ISCC.exe（PATH / 常见安装路径），找不到返回空串。"""
+    exe = shutil.which("ISCC")
+    if exe:
+        return exe
+    for base in (os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                 os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
+        cand = os.path.join(base, "Inno Setup 6", "ISCC.exe")
+        if os.path.isfile(cand):
+            return cand
+    return ""
+
+
+def compile_installer(iss_path: str) -> int:
+    """用 ISCC 编译安装包；未装 Inno Setup 时提示手动编译（不算失败）。"""
+    iscc = find_iscc()
+    if not iscc:
+        print("[提示] 未检测到 Inno Setup 6，跳过安装包编译。"
+              "安装后右键 build_installer.iss → Compile 即可。")
+        return 0
+    print(f"[安装包] {iscc} {iss_path}")
+    ret = subprocess.call([iscc, iss_path], cwd=ROOT)
+    if ret == 0:
+        print(f"[完成] 安装包已输出到 {os.path.join(ROOT, 'dist_installer')}")
+    else:
+        print(f"[错误] ISCC 编译失败（exit={ret}）")
+    return ret
+
+
 def build(version: str) -> int:
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
         print("[错误] 未安装 PyInstaller：pip install pyinstaller")
         return 2
+
+    entry_path = os.path.join(ROOT, ENTRY)
+    with open(entry_path, "w", encoding="utf-8") as f:
+        f.write(ENTRY_CODE)
 
     sep = ";" if os.name == "nt" else ":"
     icon = prepare_icon()
@@ -127,13 +187,17 @@ def build(version: str) -> int:
         "--collect-all", "cv2",
         # 多进程子进程入口（spawn）需显式收模块
         "--hidden-import", "brighteye.vision.worker",
+        # 排除误收的重型库（见文件头 EXCLUDES 说明）
+        *(arg for mod in EXCLUDES for arg in ("--exclude-module", mod)),
         ENTRY,
     ]
     print("[打包]", " ".join(cmd))
     ret = subprocess.call(cmd, cwd=ROOT)
     if ret == 0:
         print(f"\n[完成] dist/{APP_NAME}/{APP_NAME}.exe")
-        print(f"[提示] Inno Setup 脚本: {write_iss(version, icon)}")
+        iss = write_iss(version, icon)
+        print(f"[提示] Inno Setup 脚本: {iss}")
+        ret = compile_installer(iss)   # 装了 Inno Setup 就顺手编出 setup.exe
     return ret
 
 

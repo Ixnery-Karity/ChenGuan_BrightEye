@@ -3,7 +3,7 @@
 形象为原创人设弥悠（Miyu，详见 docs/弥悠人设.md）：
   浅粉紫长发 + 猫耳 + 黑色桃心发夹 · 半睁的紫色大眼 · 黑色项圈(隐私锁) ·
   白色短袖衬衫 + 黑色领带 · 酒红背带连衣裙(金色双排扣 + 白色裙摆滚边) ·
-  黑色过膝袜 + 黑皮鞋。性格慵懒傲娇、言不由衷、猫系看护者。
+  黑色过膝袜 + 黑皮鞋。性格温柔慵懒、把关心说出口的猫系看护者。
 
 【渲染双轨】
   ① 外部立绘（galgame 风，推荐）：把 AI 生成的透明背景 PNG 立绘放进
@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from typing import Callable, Dict, Optional
@@ -89,6 +90,10 @@ BLINK_FILES = {
     ANGRY: "wenna_angry_blink.png",
 }
 ART_TARGET_H = 300  # 立绘按整数倍缩放到的目标显示高度(像素)
+# 源图预缩放上限：显示高度最大 300×2.2≈660px，把 4 百万像素原图先缩到
+# 此高度再做 floodfill 抠图——纯 Python 泛洪按像素计费，缩 ~14 倍像素
+# 即把单张 5~15s 的抠图压到亚秒级（启动 60s 阻塞的根治点之一）。
+_MAX_SRC_H = 720
 
 
 def _lerp_hex(c0, c1, t):
@@ -116,6 +121,9 @@ def _pil_remove_bg(im, thresh: int = 60):
         前景（弥悠本体）保持不透明。修掉「PNG 背景方框很突兀」的问题。
     thresh 越大容忍背景渐变越强，但过大可能误吃前景边缘。"""
     im = im.convert("RGBA")
+    if im.height > _MAX_SRC_H:
+        w = max(1, round(im.width * _MAX_SRC_H / im.height))
+        im = im.resize((w, _MAX_SRC_H), Image.LANCZOS)
     if im.getchannel("A").getextrema()[0] < 250:
         return im
     rgb = im.convert("RGB")
@@ -148,23 +156,32 @@ def _pil_to_photo(im, target_h: int):
 # 模块级立绘缓存：桌宠与聊天窗共用一份，floodfill 抠图只做一次（启动优化）
 _SPRITE_CACHE = None
 _SPRITE_CACHE_READY = False
+_SPRITE_LOCK = threading.Lock()
 
 
-def _load_sprites():
+def _load_sprites(pil_only: bool = False):
     """加载 assets/pet/ 下的立绘（模块级缓存，多处调用只加载一次）。
     优先 PIL：抠背景 + 显示时 LANCZOS 缩放（不裁切、清晰）；
     无 PIL 时退回 tk.PhotoImage（整数倍缩放）。
+    pil_only=True 供后台线程调用：只走 PIL 分支（tk.PhotoImage 不能跨线程创建）。
     返回 (sprites, pil_mode) 或 None（无基准 idle 图→回退矢量）。
     sprites 键：NORMAL/HAPPY/POUT/ANGRY/SLEEPY 与 'blink'。"""
     global _SPRITE_CACHE, _SPRITE_CACHE_READY
     if _SPRITE_CACHE_READY:
         return _SPRITE_CACHE
-    _SPRITE_CACHE = _load_sprites_impl()
-    _SPRITE_CACHE_READY = True
-    return _SPRITE_CACHE
+    with _SPRITE_LOCK:
+        if _SPRITE_CACHE_READY:
+            return _SPRITE_CACHE
+        result = _load_sprites_impl(pil_only)
+        if result is None and pil_only:
+            # 后台线程无法做 tk 兜底，不落缓存，留给主线程同步加载
+            return None
+        _SPRITE_CACHE = result
+        _SPRITE_CACHE_READY = True
+        return _SPRITE_CACHE
 
 
-def _load_sprites_impl():
+def _load_sprites_impl(pil_only: bool = False):
     paths: Dict[str, str] = {}
     for mood, fname in SPRITE_FILES.items():
         p = os.path.join(ASSET_DIR, fname)
@@ -186,6 +203,8 @@ def _load_sprites_impl():
             return out, True
         except Exception:
             pass
+    if pil_only:
+        return None
     try:
         out = {k: tk.PhotoImage(file=p) for k, p in paths.items()}
         return out, False
@@ -227,16 +246,22 @@ class FloatingPet:
         self._disp_cache: Dict[str, object] = {}  # 当前缩放下的立绘缓存
         self._disp_cache_scale: Optional[float] = None
 
-        # 优先加载外部 galgame 立绘，缺图回退矢量绘制（需在算窗口尺寸前）
-        loaded = _load_sprites()
+        # 立绘留白：顶部给气泡预留空间（不再遮挡形象）；侧/底少量留白避免裁切。
+        self._art_h = ART_TARGET_H
+        self._pad_top, self._pad_side, self._pad_bot = 92, 24, 14
+
+        # 立绘加载：若缓存已就绪直接用，否则先以矢量兜底起步、后台线程加载，
+        # 完成后经 win.after 回主线程热切换——避免抠图阻塞启动首帧（原 60s 卡顿）。
+        if _SPRITE_CACHE_READY:
+            loaded = _SPRITE_CACHE
+        else:
+            loaded = None
+            self._start_async_sprite_load()
         if loaded:
             self._sprites, self._pil_mode = loaded
         else:
             self._sprites, self._pil_mode = None, False
 
-        # 立绘留白：顶部给气泡预留空间（不再遮挡形象）；侧/底少量留白避免裁切。
-        self._art_h = ART_TARGET_H
-        self._pad_top, self._pad_side, self._pad_bot = 92, 24, 14
         if self._sprites:
             base = self._sprites[NORMAL]
             iw, ih = base.size if self._pil_mode else (base.width(), base.height())
@@ -305,6 +330,57 @@ class FloatingPet:
         self._running = False
         try:
             self.win.destroy()
+        except Exception:
+            pass
+
+    # ---- 立绘异步加载与热切换（消除启动抠图阻塞）----
+    def _start_async_sprite_load(self):
+        """后台线程加载并抠图立绘（纯 PIL），完成后回主线程热切换。
+        PIL 不可用时不异步（tk.PhotoImage 不能跨线程创建），保持矢量兜底。"""
+        if not _PIL_OK:
+            return
+
+        def worker():
+            try:
+                loaded = _load_sprites(pil_only=True)
+            except Exception:
+                loaded = None
+            if loaded:
+                try:
+                    self.win.after(0, lambda: self._apply_loaded_sprites(loaded))
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, name="sprite-loader", daemon=True).start()
+
+    def _apply_loaded_sprites(self, loaded):
+        """主线程内热切换到已加载好的立绘：更新贴图、重算窗口尺寸并保持右下角贴边。"""
+        if not self._running:
+            return
+        try:
+            sprites, pil_mode = loaded
+            self._sprites, self._pil_mode = sprites, pil_mode
+            self._disp_cache.clear()
+            self._disp_cache_scale = None
+
+            base = sprites[NORMAL]
+            iw, ih = base.size if pil_mode else (base.width(), base.height())
+            art_w0 = max(1, round(self._art_h * iw / max(1, ih)))
+            self.W = art_w0 + 2 * self._pad_side
+            self.H = self._pad_top + self._art_h + self._pad_bot
+
+            sc = self._scale
+            cw, ch = int(self.W * sc), int(self.H * sc)
+            # 立绘窗通常比矢量兜底窄——保持右下角贴边，避免热切换后位置突兀。
+            x, y = self.win.winfo_x(), self.win.winfo_y()
+            sw = self.win.winfo_screenwidth()
+            sh = self.win.winfo_screenheight()
+            if x + cw > sw:
+                x = max(0, sw - cw - 30)
+            if y + ch > sh:
+                y = max(0, sh - ch - 60)
+            self.canvas.config(width=cw, height=ch)
+            self.win.geometry(f"{cw}x{ch}+{x}+{y}")
         except Exception:
             pass
 

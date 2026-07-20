@@ -177,7 +177,7 @@ class Monitor:
                 daemon=True, name="vision-loader")
             self._backend_thread.start()
 
-        # 台词扩充守护线程：LLM 可用时后台生成傲娇台词混入抽取池。
+        # 台词扩充守护线程：LLM 可用时后台生成温柔台词混入抽取池。
         # 延迟启动，避免开机即批量占用 Ollama、拖慢首条真实对话。
         delay = getattr(getattr(config, "llm", None), "line_refresh_delay_sec", 20.0)
         _t = threading.Timer(max(0.0, delay), start_line_refresher, args=(config,))

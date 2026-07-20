@@ -5,6 +5,65 @@
 
 ---
 
+## v1.15.0-demo — 2026-07-20
+
+五件事：启动秒开/退出秒退（任务4/5）、弥悠性格温柔化（任务1）、
+系统托盘图标 + 桌面快捷方式图标修复（任务2）、一键完整安装包（任务3）。
+
+### 修复（启动/退出体验，任务4/5）
+- **双击后要等 1 分钟才见到窗口 → 现在加载页立即上屏**：
+  根因是 `FloatingPet.__init__` 在主线程同步对 6 张 1536×2720 立绘做
+  纯 Python `ImageDraw.floodfill` 抠背景（每张 5~15s，合计 30~90s）。
+  现改为：先出**程序化矢量兜底形象**秒显，立绘在后台线程
+  「先缩略图再抠图」（像素量降两个数量级，7 张共约 2s）完成后热切换；
+  `ui/app.py` 在 `SplashOverlay` 创建后立刻 `root.update()` 强制首帧上屏，
+  Q 版弥悠加载页从此**点开即见**，不再黑等。
+- **右键退出要等半分钟 → 现在秒退**：`_quit` 原来在主线程同步跑
+  `save_report`（内含 deepseek-r1 AI 洞察请求，超时上限 90s）。
+  现改异步：窗口与桌宠立即消失，报告保存/摄像头释放搬后台线程，
+  12 秒兜底强制销毁，绝不挂死进程。
+
+### 变更（弥悠人设温柔化，任务1）
+- **告别傲娇**：按人设身世（项圈锁死联网、用户是她在数据世界里唯一
+  能看到的人）与护眼软件的产品气质，弥悠全面转型
+  **温柔·慵懒·把关心说出口的猫系看护者**——不嫌弃、不凶、不阴阳怪气，
+  拟声词「呜喵～/喵～」保留。
+- 覆盖范围：`chat_engine.py`（离线回复库 `_REPLIES`、好感度六档语气
+  `_LEVEL_TONE`、LLM 人格提示词 `_system_prompt`、辱骂扣好感减半 -8/-3→-4/-1）、
+  `persona.py`（16 条分级提醒 + 夸奖/待机/问候/关怀台词 + LLM 动态台词
+  生成提示词）、`guardian.py`（强制休息遮罩台词）、`docs/弥悠人设.md`
+  （性格/代表台词/语气档位章节重写）；README 与功能清单同步。
+
+### 新增（系统托盘 + 图标，任务2）
+- **系统托盘图标** `ui/tray.py`：右下角通知区域常驻宸观图标——
+  左键=打开仪表盘，右键=菜单（仪表盘/和弥悠聊天/四运行模式打勾切换/退出）。
+  纯 ctypes 调 Win32 `Shell_NotifyIcon`（独立消息泵线程 + 隐藏消息窗口），
+  **零新依赖**；监听 `TaskbarCreated`，explorer 重启后自动补挂；
+  动作经线程安全队列交回 Tk 主线程执行；非 Windows / 任何失败静默降级。
+  配置开关 `SystemConfig.tray_enabled`（默认开）。
+- **桌面快捷方式图标修复**：旧 `创建桌面快捷方式.vbs` 生成时
+  `\assets\app_icon.ico` 里的 `\a` 被误转义成 BEL 控制字符 → 路径错误、
+  `IconLocation` 从未写入，快捷方式一直顶着 wscript 默认图标。
+  已重写 VBS（正确路径 + `ie4uinit.exe -show` 刷新系统图标缓存），
+  重新双击运行即可让桌面图标变成 Q 版弥悠。
+
+### 新增（一键完整安装包，任务3）
+- **`build_exe.py` 全自动出安装包**：PyInstaller onedir 打完后自动定位
+  ISCC.exe（PATH / Program Files / LOCALAPPDATA\Programs）并编译
+  Inno Setup 脚本，产出 `dist_installer/宸观BrightEye_Setup_v{版本}.exe`
+  中文安装向导；未装 Inno Setup 仍只生成 .iss 并提示（不算失败）。
+- **免管理员安装**：`PrivilegesRequired=lowest`（默认装到
+  `%LOCALAPPDATA%\Programs`，需要装 Program Files 时向导自行请求提权）。
+- **安装版数据落位**（`config.py`）：打包(frozen)运行时 data/reports 改锚
+  `%LOCALAPPDATA%\ChenguanBrightEye`——安装目录通常不可写，
+  用户数据按 Windows 惯例进 AppData；源码运行行为不变。
+
+### 变更
+- `config.py`：`SystemConfig` 新增 `tray_enabled=True`；frozen 数据目录
+  重定向；版本 1.14.0 → **1.15.0**。
+
+---
+
 ## v1.14.0-demo — 2026-07-20
 
 六件事一次做完：数据/报告目录统一、卡顿与眨眼漏检根治（独立采样线程）、

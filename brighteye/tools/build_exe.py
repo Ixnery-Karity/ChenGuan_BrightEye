@@ -84,11 +84,31 @@ Source: "dist\{app_name}\*"; DestDir: "{{app}}"; Flags: recursesubdirs
 
 [Icons]
 Name: "{{group}}\宸观 BrightEye"; Filename: "{{app}}\{app_name}.exe"
+Name: "{{group}}\卸载 宸观 BrightEye"; Filename: "{{uninstallexe}}"
 Name: "{{autodesktop}}\宸观 BrightEye"; Filename: "{{app}}\{app_name}.exe"
 
 [Run]
 Filename: "{{app}}\{app_name}.exe"; Description: "立即启动 宸观 BrightEye"; \
     Flags: nowait postinstall skipifsilent
+
+[Code]
+// 卸载收尾：询问是否连用户数据（监测历史/报告，%LOCALAPPDATA%\ChenguanBrightEye）
+// 一并删除。默认保留——重装后历史档案还在。
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    DataDir := ExpandConstant('{{localappdata}}\ChenguanBrightEye');
+    if DirExists(DataDir) then
+      if MsgBox('是否同时删除用户数据（监测历史 / 健康报告）？' #13#10
+                + DataDir + #13#10 #13#10
+                + '选[否]则保留，重装后历史档案不丢。',
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+        DelTree(DataDir, True, True, True);
+  end;
+end;
 """
 
 

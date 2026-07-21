@@ -34,6 +34,19 @@ _ACCENT = "#FF4FB4"      # 光点·粉
 _FG = "#F2EDFF"
 _MUTED = "#8F86B8"
 
+# 待机轮播文案（v1.16.0）：项目初次介绍(宣传) × 弥悠性格 × 等待安抚，
+# 每条 ≈4 秒轮换。首次启动加载较久，这里承担"第一印象"职责。
+_INTRO_LINES = [
+    "宸观 BrightEye —— 一颗普通摄像头，守护你的眨眼、用眼距离、坐姿与心情",
+    "弥悠：初次见面…往后你盯屏幕的时候，我会替你的眼睛把「累」说出口，喵～",
+    "全程本地处理·画面当帧销毁·绝不上云——弥悠的项圈，就是你的隐私锁",
+    "弥悠：第一次启动要准备的东西有点多，耐心等我一下下就好…",
+    "20-20-20 护眼法则 + 分级温柔提醒，长时间用眼的你值得被认真守护",
+    "弥悠：你只管专注工作，眼睛的事…交给我来操心就行",
+    "眨眼监测 · 距离防线 · 坐姿纠正 · 情绪关怀 · 强制护眼，五重守护常伴左右",
+]
+_INTRO_SWITCH_FRAMES = 120   # 30fps × 4s 换一条
+
 
 class SplashOverlay:
     """全窗覆盖的启动待机页。tick() 由主循环 30fps 驱动，request_close()
@@ -94,6 +107,12 @@ class SplashOverlay:
                             font=("Microsoft YaHei", 10), fill=_MUTED)
         self.cv.create_text(cx, cy + r + 112, text="",
                             font=("Microsoft YaHei", 10), fill=_RING2, tags="status")
+        # 轮播介绍区（项目宣传/弥悠性格/等待安抚），tick() 里定期换文案
+        self.cv.create_text(cx, cy + r + 150, text=_INTRO_LINES[0],
+                            font=("Microsoft YaHei", 10),
+                            fill="#C9BCF2", tags="intro",
+                            width=max(360, self._w - 200), justify="center")
+        self._intro_idx = 0
         self.cv.create_text(self._w - 14, self._h - 12, anchor="se",
                             text=f"v{CONFIG.version}",
                             font=("Consolas", 9), fill=_MUTED)
@@ -120,6 +139,11 @@ class SplashOverlay:
         # 状态文字 + 省略号动效
         dots = "·" * (1 + (f // 12) % 3)
         self.cv.itemconfig("status", text=f"{status or '正在唤醒弥悠'} {dots}")
+        # 介绍文案轮播（约 4 秒一条，只在切换帧改 widget，避免无谓重绘）
+        idx = (f // _INTRO_SWITCH_FRAMES) % len(_INTRO_LINES)
+        if idx != self._intro_idx:
+            self._intro_idx = idx
+            self.cv.itemconfig("intro", text=_INTRO_LINES[idx])
 
     # ---- 收起 --------------------------------------------------------
     def request_close(self) -> None:

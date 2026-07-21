@@ -105,7 +105,8 @@ class SessionMetrics:
             self._tl_last = now
             self.timeline.append((
                 round(now, 1),
-                round(self.blink_rate_recent(30.0), 1),
+                round(self.blink_rate_recent(
+                    getattr(thresholds, "blink_rate_window_sec", 60.0)), 1),
                 round(self._dist[-1][1], 1) if self._dist else None,
                 round(self._cva[-1][1], 1) if self._cva else None,
             ))
@@ -145,16 +146,20 @@ class SessionMetrics:
     def elapsed_min(self) -> float:
         return self.elapsed_sec / 60.0
 
-    def blink_rate_recent(self, window_sec: float = 30.0) -> float:
-        """近 window_sec 秒折算成的每分钟眨眼次数（滚动窗口，响应当前状态）。"""
+    def blink_rate_recent(self, window_sec: float = 60.0) -> float:
+        """近 window_sec 秒折算成的每分钟眨眼次数（滚动窗口，响应当前状态）。
+
+        折算分母设 15s 下限：会话刚开始几秒内的快速连眨不会被外推放大
+        （例如开头 5s 眨 3 次，若按 5s 折算会虚高到 36 次/分）。
+        """
         now = time.time()
         recent = [t for t in self._blink_times if now - t <= window_sec]
         span = min(window_sec, self.elapsed_sec)
         if span < 1e-6:
             return 0.0
-        return len(recent) * 60.0 / span
+        return len(recent) * 60.0 / max(span, 15.0)
 
-    def blink_rate_realtime(self, window_sec: float = 30.0, alpha: float = 0.2) -> float:
+    def blink_rate_realtime(self, window_sec: float = 60.0, alpha: float = 0.15) -> float:
         """实时眨眼频率：滚动窗口原始值再做指数平滑，兼顾灵敏度与稳定性。
 
         - 窗口越短越能反映"当下"用眼状态（而非整段会话累加）；

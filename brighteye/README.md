@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.15.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.16.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -25,20 +25,26 @@
 本机若未安装摄像头或 mediapipe，程序会**自动回退到内置模拟器**，完整跑通
 「监测 → 实时建议 → 健康报告」全链路，可直接用于答辩演示。
 
-### 完整安装包（v1.15.0 · 软件成品形态）
+### 完整安装包（v1.16.0 · 软件成品形态）
 
 - 运行 `python -m brighteye.tools.build_exe` 一键产出
-  **`dist_installer/宸观BrightEye_Setup_v1.15.0-demo.exe`** 中文安装向导
+  **`dist_installer/宸观BrightEye_Setup_v1.16.0-demo.exe`** 中文安装向导
   （PyInstaller onedir 打包后自动调用 Inno Setup 编译）。
 - 免管理员安装（默认装到 `%LOCALAPPDATA%\Programs`），自动创建桌面/
   开始菜单快捷方式；安装版免 Python 环境双击即用，用户数据与报告按
   Windows 惯例落 `%LOCALAPPDATA%\ChenguanBrightEye\`。
+- **双击卸载**（v1.16.0）：开始菜单含「卸载 宸观 BrightEye」入口，
+  也可走系统「设置 → 应用」卸载；卸载时询问是否连监测历史/报告一并
+  删除，**默认保留**——重装后个人健康档案不丢。
 
 ### 双击启动（源码运行 · 无命令行窗口）
 
 - 双击 **`brighteye/启动宸观BrightEye.vbs`** —— 以 pythonw 无窗口启动，
   全程不出现任何命令提示符；**加载页点开即见**（v1.15.0 立绘改后台
   异步抠图 + 首帧强制上屏，启动不再黑等，退出也从半分钟改为秒退）。
+  **v1.16.0 起自动检测运行环境**：没装 Python 或缺库时弹窗提示一键安装
+  （调用 `安装运行环境.bat` 自动装 Python 3.12 + 全部依赖，含清华镜像
+  兜底），装完自动继续启动——全新机器双击即用。
 - 双击 **`brighteye/创建桌面快捷方式.vbs`** —— 在桌面生成带 Q 版弥悠图标的
   「宸观 BrightEye」快捷方式（v1.15.0 修复图标路径转义损坏并自动刷新
   系统图标缓存，桌面图标正确显示 Q 版弥悠）。
@@ -182,7 +188,8 @@ brighteye/
 ├── main.py              入口（参数解析 / headless 自测）
 ├── config.py            全局配置与健康阈值（集中可调 + LLM/Guardian/Emotion 三段配置）
 ├── CHANGELOG.md         版本更新日志（每次发版同步登记）
-├── 启动宸观BrightEye.vbs    双击无窗口启动器（pythonw，零命令行，v1.13.0）
+├── 启动宸观BrightEye.vbs    双击无窗口启动器（pythonw，零命令行；v1.16.0 环境自检+一键安装）
+├── 安装运行环境.bat          环境一键安装（自动装 Python 3.12 + 依赖，清华镜像兜底，v1.16.0）
 ├── 创建桌面快捷方式.vbs      桌面生成带图标快捷方式（v1.13.0）
 ├── assets/
 │   └── app_icon.png/.ico    Q 版弥悠软件图标（窗口/任务栏/打包/快捷方式全链路）
@@ -195,6 +202,7 @@ brighteye/
 │   ├── Golang重写方案调研.md     Go/Rust/Nuitka 重写路线对比（v1.13 调研，不整改）
 │   ├── 启动与卡顿性能分析.md     启动耗时分布 + 卡顿根因 + 线程/进程选型（v1.14）
 │   ├── 桌宠技术栈调研_天选姬.md  天选姬 Unity+Live2D+Win32 实现与迁移路线（v1.13 调研）
+│   ├── 版本规范与路线图.md       版本号规范 + 历史脉络 + 1.x/2.x/3.x 未来规划（v1.16）
 │   └── UI技术栈升级路线.md       PySide6 / Tauri 迁移规划
 ├── llm_models/
 │   ├── README.md        模型获取说明（8.8GB 超 GitHub 限制 → 脚本分发）

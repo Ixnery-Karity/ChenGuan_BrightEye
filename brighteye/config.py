@@ -27,8 +27,10 @@ class Thresholds:
     ear_consec_frames: int = 2       # 连续低于阈值的帧数才计一次眨眼，过滤抖动
     blink_rate_low: float = 10.0     # 每分钟眨眼次数低于此值 → 干眼风险提示
     blink_rate_normal: float = 15.0  # 正常静息约15-20次/分钟
-    blink_rate_window_sec: float = 30.0  # 实时眨眼频率的滚动统计窗口(秒)，窗口越短越灵敏
-    blink_rate_smooth: float = 0.2       # 显示值的指数平滑系数(0~1)，抑制窗口边缘抖动
+    blink_rate_window_sec: float = 60.0  # 实时眨眼频率的滚动统计窗口(秒)。曾用30s，
+                                         # 快速连眨几下会被折算放大到每分钟(虚高)，
+                                         # 拉长到60s后突发眨眼被摊平，读数更贴近真实频率
+    blink_rate_smooth: float = 0.15      # 显示值的指数平滑系数(0~1)，抑制窗口边缘抖动
     ear_min_close_sec: float = 0.10      # 闭眼墙钟时长兜底(秒)：掉帧时快速眨眼也能判定
 
     # 实时显示 ---------------------------------------------------------
@@ -148,7 +150,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.15.0-demo"
+    version: str = "1.16.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)

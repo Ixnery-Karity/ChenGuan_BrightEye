@@ -150,7 +150,7 @@ class SyncConfig:
 class AppConfig:
     app_name: str = "宸观 BrightEye"
     subtitle: str = "宸宇护目·智能护眼伴侣"
-    version: str = "1.16.0-demo"
+    version: str = "1.17.0-demo"
     thresholds: Thresholds = field(default_factory=Thresholds)
     llm: LLMConfig = field(default_factory=LLMConfig)
     guardian: GuardianConfig = field(default_factory=GuardianConfig)
@@ -165,6 +165,9 @@ class AppConfig:
 
     # 默认运行模式（companion/strict/review/silent）
     default_mode: str = "companion"
+    # 激活皮肤：assets/skins/<skin>/（含 idle.png 即整套生效，隔离加载
+    # 绝不与旧 assets/pet/wenna_* 混搭）；置空则回退旧文乃立绘/矢量兜底
+    skin: str = "miyou"
     # 复盘模式：每多少分钟自动生成一次报告
     review_interval_min: float = 20.0
 

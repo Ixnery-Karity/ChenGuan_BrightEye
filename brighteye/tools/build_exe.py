@@ -79,8 +79,13 @@ WizardStyle=modern
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl"
 
+[Tasks]
+; 默认勾选；可取消（离线铁律：不装大模型软件功能完整可用）
+Name: "llm"; Description: "同时下载并安装本地大模型（Ollama + 聊天/复盘两模型，约 8.8GB，需联网；任一步下载失败自动回退删除并提示，不影响软件本体）"
+
 [Files]
 Source: "dist\{app_name}\*"; DestDir: "{{app}}"; Flags: recursesubdirs
+Source: "brighteye\llm_models\*"; DestDir: "{{app}}\llm_models"
 
 [Icons]
 Name: "{{group}}\宸观 BrightEye"; Filename: "{{app}}\{app_name}.exe"
@@ -92,8 +97,51 @@ Filename: "{{app}}\{app_name}.exe"; Description: "立即启动 宸观 BrightEye"
     Flags: nowait postinstall skipifsilent
 
 [Code]
-// 卸载收尾：询问是否连用户数据（监测历史/报告，%LOCALAPPDATA%\ChenguanBrightEye）
-// 一并删除。默认保留——重装后历史档案还在。
+// —— 安装收尾：勾选大模型任务时，运行回退安全的模型安装脚本 ——
+// 脚本内任一下载失败会自行 ollama rm 清掉半成品并返回非 0；这里只负责弹窗提醒。
+// 软件本体自带运行时（无需下载 Python/依赖库），故失败仅影响 AI 增强，不回滚本体。
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Bat: string;
+  ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if WizardIsTaskSelected('llm') then
+    begin
+      Bat := ExpandConstant('{{app}}\llm_models\install_models_setup.bat');
+      if Exec(ExpandConstant('{{cmd}}'), '/C "' + Bat + '"', '',
+              SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+      begin
+        if ResultCode <> 0 then
+          MsgBox('大模型下载/安装失败，已自动回退删除未完成的模型文件。' #13#10 #13#10
+                 + '软件本体不受影响，全部监测功能可离线使用；' #13#10
+                 + '联网后可随时重跑 安装目录\llm_models\install_models_setup.bat 补装。',
+                 mbError, MB_OK);
+      end
+      else
+        MsgBox('无法启动大模型安装脚本，可稍后手动运行' #13#10
+               + '安装目录\llm_models\install_models_setup.bat 补装。',
+               mbError, MB_OK);
+    end;
+  end;
+end;
+
+// —— 卸载收尾：删用户数据与已下载大模型（默认删）；——
+// 保留 Python 环境与 Ollama 程序本体（属共享系统组件，其他软件可能在用）。
+procedure RemoveModels();
+var
+  ResultCode: Integer;
+  Exe: string;
+begin
+  Exe := ExpandConstant('{{localappdata}}\Programs\Ollama\ollama.exe');
+  if not FileExists(Exe) then
+    Exe := 'ollama';
+  Exec(ExpandConstant('{{cmd}}'),
+       '/C ""' + Exe + '" rm qwen2.5:7b-instruct & "' + Exe + '" rm deepseek-r1:7b"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: string;
@@ -105,8 +153,13 @@ begin
       if MsgBox('是否同时删除用户数据（监测历史 / 健康报告）？' #13#10
                 + DataDir + #13#10 #13#10
                 + '选[否]则保留，重装后历史档案不丢。',
-                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON1) = IDYES then
         DelTree(DataDir, True, True, True);
+    if MsgBox('是否删除已下载的本地大模型（约 8.8GB）？' #13#10
+              + 'qwen2.5:7b-instruct 与 deepseek-r1:7b' #13#10 #13#10
+              + '（仅删模型；Ollama 程序与 Python 环境保留，不影响其他软件）',
+              mbConfirmation, MB_YESNO or MB_DEFBUTTON1) = IDYES then
+      RemoveModels();
   end;
 end;
 """

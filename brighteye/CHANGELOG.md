@@ -5,6 +5,48 @@
 
 ---
 
+## v1.17.0-demo — 2026-07-21
+
+五件事：GitHub 发版转 Release 制、安装包集成大模型自动安装（失败回退）、
+环境安装防 Python 版本冲突、AI 生成弥悠官方皮肤、皮肤隔离加载规则。
+
+### 新增（皮肤系统首落地，任务4+5）
+- **弥悠官方皮肤**：本地 Stable Diffusion WebUI（anything-v5，seed=3721）
+  生成 6 张差分立绘（idle/happy/blink/pout/angry/sleepy），符合
+  `docs/弥悠人设.md`：粉紫长发、半睁紫瞳、猫耳、黑项圈、桃心发夹、
+  猫爪防线姿势；入库 `assets/skins/miyou/`。
+- **皮肤隔离加载**（`ui/pet.py` + `config.skin`，防新旧形象冲突）：
+  皮肤包用通用文件名（idle.png 等）放 `assets/skins/<名>/`，含 idle.png
+  即整套生效；生效时**只**从该皮肤目录取图，绝不与旧
+  `assets/pet/wenna_*`（文乃旧立绘）混搭；无任何皮肤才回退旧立绘/矢量。
+  上传规则见 `assets/skins/README.txt`。
+
+### 新增（安装包大模型集成，任务2）
+- 安装向导新增「**同时下载并安装本地大模型**」勾选项（默认勾选，
+  Ollama + qwen2.5/deepseek-r1 双模型约 8.8GB）；由新脚本
+  `llm_models/install_models_setup.bat` 执行：自动装 Ollama →
+  拉起服务 → 逐个拉模型。
+- **失败自动回退**：任一步下载失败即 `ollama rm` 清掉半成品模型并
+  弹窗提醒（软件本体自带运行时不受影响，可离线用全部监测功能，
+  联网后可重跑脚本补装）——离线铁律不破。
+- **卸载增强**：卸载时询问删除用户数据与已下载大模型（默认删）；
+  **保留 Python 环境与 Ollama 程序本体**（共享组件不误伤其他软件）。
+
+### 变更（环境安装防版本冲突，任务3）
+- `安装运行环境.bat` 重写：只接受 **Python 3.10~3.14**（PATH 版本
+  不合格自动跳过，改用 `py -3.12` 等或安装独立 Python 3.12，不动
+  既有版本）；选定后把解释器**绝对路径固定写入
+  `brighteye/python_path.txt`**（gitignore，不入库）。
+- `启动宸观BrightEye.vbs` 重写：启动与探测**优先用固定解释器**
+  （同目录 pythonw 无窗口启动），多版本共存彻底不串；实测通过。
+
+### 流程（GitHub Release 制，任务1）
+- 发版纪律升级：每版 push 之外必须 `git tag` + **GitHub Release**
+  （附源码 zip / 安装包），历史版本可补发 Release，不整体替代；
+  `docs/版本规范与路线图.md` 同步。
+
+---
+
 ## v1.16.0-demo — 2026-07-21
 
 五件事：眨眼频率虚高修正、运行环境一键安装（免手动装 Python/依赖）、

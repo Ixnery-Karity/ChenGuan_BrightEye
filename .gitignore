@@ -10,3 +10,6 @@ brighteye/**/__pycache__/
 brighteye/data/
 brighteye/reports/
 *.pyc
+
+# 本机固定的解释器路径（机器相关，不入库）
+brighteye/python_path.txt

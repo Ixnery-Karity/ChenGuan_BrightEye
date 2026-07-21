@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.16.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.17.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -25,17 +25,21 @@
 本机若未安装摄像头或 mediapipe，程序会**自动回退到内置模拟器**，完整跑通
 「监测 → 实时建议 → 健康报告」全链路，可直接用于答辩演示。
 
-### 完整安装包（v1.16.0 · 软件成品形态）
+### 完整安装包（v1.17.0 · 软件成品形态）
 
 - 运行 `python -m brighteye.tools.build_exe` 一键产出
-  **`dist_installer/宸观BrightEye_Setup_v1.16.0-demo.exe`** 中文安装向导
+  **`dist_installer/宸观BrightEye_Setup_v1.17.0-demo.exe`** 中文安装向导
   （PyInstaller onedir 打包后自动调用 Inno Setup 编译）。
 - 免管理员安装（默认装到 `%LOCALAPPDATA%\Programs`），自动创建桌面/
-  开始菜单快捷方式；安装版免 Python 环境双击即用，用户数据与报告按
-  Windows 惯例落 `%LOCALAPPDATA%\ChenguanBrightEye\`。
-- **双击卸载**（v1.16.0）：开始菜单含「卸载 宸观 BrightEye」入口，
-  也可走系统「设置 → 应用」卸载；卸载时询问是否连监测历史/报告一并
-  删除，**默认保留**——重装后个人健康档案不丢。
+  开始菜单快捷方式；安装版**自带 Python 运行时**免环境双击即用（天然无
+  Python 版本冲突），用户数据与报告按 Windows 惯例落
+  `%LOCALAPPDATA%\ChenguanBrightEye\`。
+- **大模型一键随装**（v1.17.0）：安装向导内勾选（默认勾选）即自动装
+  Ollama + 聊天/复盘双模型（约 8.8GB）；**任一下载失败自动回退**删除
+  半成品模型并弹窗提醒——软件本体不受影响，可离线用全部监测功能。
+- **双击卸载**（v1.16.0，v1.17.0 增强）：开始菜单含「卸载 宸观 BrightEye」
+  入口；卸载时询问删除用户数据与已下载大模型（默认删），
+  **保留 Python 环境与 Ollama 程序本体**（共享组件不误伤其他软件）。
 
 ### 双击启动（源码运行 · 无命令行窗口）
 
@@ -45,6 +49,9 @@
   **v1.16.0 起自动检测运行环境**：没装 Python 或缺库时弹窗提示一键安装
   （调用 `安装运行环境.bat` 自动装 Python 3.12 + 全部依赖，含清华镜像
   兜底），装完自动继续启动——全新机器双击即用。
+  **v1.17.0 防版本冲突**：只接受 Python 3.10~3.14（不合格自动跳过并装
+  独立 3.12，不动既有版本），选定解释器绝对路径固定写入
+  `python_path.txt`，启动器只认它——多版本共存彻底不串。
 - 双击 **`brighteye/创建桌面快捷方式.vbs`** —— 在桌面生成带 Q 版弥悠图标的
   「宸观 BrightEye」快捷方式（v1.15.0 修复图标路径转义损坏并自动刷新
   系统图标缓存，桌面图标正确显示 Q 版弥悠）。
@@ -105,7 +112,10 @@ python -m brighteye.main --report monthly
 黑色桃心发夹·温柔慵懒看护者；「视觉负荷共鸣」——你不眨眼久用眼，她就替你的
 眼睛犯困喊累。支持外部 galgame 差分立绘 + 程序化矢量兜底，无边框透明置顶可拖拽：
 **左键点开仪表盘、右键切换模式/退出、按住拖动位置**；情绪随用眼状态变色，
-气泡台词实时陪伴。
+气泡台词实时陪伴。**v1.17.0 官方 AI 皮肤**：本地 Stable Diffusion 生成的
+弥悠整套差分立绘随仓库发布（`assets/skins/miyou/`）；皮肤按目录隔离加载
+（含 idle.png 即整套生效，绝不与旧文乃立绘混搭），上传新皮肤规则见
+`assets/skins/README.txt`。
 
 ### 大模型增强能力（v1.8.1 · 全部可选，离线自动回退）
 | 能力 | 说明 | 离线兜底 |
@@ -192,7 +202,9 @@ brighteye/
 ├── 安装运行环境.bat          环境一键安装（自动装 Python 3.12 + 依赖，清华镜像兜底，v1.16.0）
 ├── 创建桌面快捷方式.vbs      桌面生成带图标快捷方式（v1.13.0）
 ├── assets/
-│   └── app_icon.png/.ico    Q 版弥悠软件图标（窗口/任务栏/打包/快捷方式全链路）
+│   ├── app_icon.png/.ico    Q 版弥悠软件图标（窗口/任务栏/打包/快捷方式全链路）
+│   ├── pet/                 旧文乃立绘（仅无皮肤时整套兜底，不与皮肤混用）
+│   └── skins/miyou/         弥悠官方 AI 皮肤（隔离加载，规则见 skins/README.txt，v1.17.0）
 ├── docs/
 │   ├── 弥悠人设.md               桌宠原创人设档案（Soul 文档，台词/配色依据）
 │   ├── 大模型接入与部署指南.md   Ollama / 云端 API / 离线兜底三方案
@@ -207,6 +219,7 @@ brighteye/
 ├── llm_models/
 │   ├── README.md        模型获取说明（8.8GB 超 GitHub 限制 → 脚本分发）
 │   ├── install_models.bat  Windows 一键装 Ollama + 拉取两模型
+│   ├── install_models_setup.bat  安装向导调用版（非交互，失败自动回退删除，v1.17.0）
 │   └── install_models.sh   Linux/macOS 一键安装
 ├── tools/
 │   └── build_exe.py     一键打包脚本（PyInstaller onedir + Inno Setup + 软件图标接入）

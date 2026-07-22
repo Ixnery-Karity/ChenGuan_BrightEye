@@ -31,6 +31,22 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 
+def _ensure_single_instance() -> None:
+    """Windows mutex 防双击重复启动；非 Windows 静默跳过。"""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    _mutex = ctypes.windll.kernel32.CreateMutexW(None, True, "Global\\ChenguanBrightEye_SingleInstance")
+    if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk(); root.withdraw()
+        messagebox.showinfo("宸观 BrightEye", "宸观 BrightEye 已在运行中，请查看系统托盘。")
+        root.destroy()
+        sys.exit(0)
+    # 保持 mutex 句柄存活至进程退出（不 CloseHandle）
+
+
 def _run_headless(monitor: Monitor, seconds: float) -> None:
     from .core.health_report import save_report
     end = time.time() + seconds
@@ -73,6 +89,7 @@ def main() -> None:
         save_period_report(args.report, CONFIG)
         return
 
+    _ensure_single_instance()
     print(f"启动 {CONFIG.app_name} v{CONFIG.version} ...")
     monitor = Monitor(CONFIG, force_simulate=args.simulate,
                       sim_time_scale=args.fast, sim_seed=args.seed,

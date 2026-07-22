@@ -65,6 +65,7 @@ AppPublisher=宸观科技团队
 DefaultDirName={{autopf}}\ChenguanBrightEye
 DefaultGroupName=宸观 BrightEye
 UninstallDisplayIcon={{app}}\{app_name}.exe
+UninstallFilesDir={{app}}
 OutputDir=dist_installer
 OutputBaseFilename={app_name}_Setup_v{version}
 {setup_icon_line}

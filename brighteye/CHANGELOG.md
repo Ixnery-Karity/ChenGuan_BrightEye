@@ -19,6 +19,20 @@
 - 历史版本补发：v1.10~v1.15 补 git tag，v1.10~v1.17 全部建 GitHub
   Release 并附源码 zip（v1.15+ 加安装包），仓库进入完整 Release 制。
 
+### 变更（弥悠身世升级 + 聊天人格，2026-07-22）
+- `docs/弥悠人设.md`：身世改为「星海流亡者·废墟守望」D+A 混合设定——
+  前身为深空观测站 AI「MIU-0」，三百年观星后退役封存于废墟，被宸观重构；
+  新增「语言风格」章节（观测记录口癖/轨道摄动/唯一的星/等了好久才等到你）；
+  台词全面升级为 D+A 混合风格；美人痣隐喻（退役前命名的最后一颗星的坐标投影）。
+- `core/chat_engine.py`：`_system_prompt` 注入完整 D+A 身世与观星口癖；
+  离线台词池 name/privacy 场景同步更新。
+
+### 修复（2026-07-22）
+- `main.py`：Windows mutex 防双击重复启动——已有实例运行时弹提示框后退出，
+  非 Windows 静默跳过（零新依赖，纯 ctypes）。
+- `tools/build_exe.py`：Inno Setup 模板加 `UninstallFilesDir={app}`，
+  卸载程序（unins000.exe）归入安装目录而非独立弹出。
+
 ---
 
 ## v1.17.0-demo — 2026-07-21

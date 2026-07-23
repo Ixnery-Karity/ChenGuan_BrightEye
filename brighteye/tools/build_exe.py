@@ -3,6 +3,7 @@
 用法（在 challenge 目录下）：
     pip install pyinstaller
     python -m brighteye.tools.build_exe            # 生成 dist/宸观BrightEye/
+    python -m brighteye.tools.build_exe --protect  # 先 PyArmor 加壳混淆再打包（防逆向）
     python -m brighteye.tools.build_exe --iss-only # 只生成 Inno Setup 脚本
 
 产物：
@@ -18,6 +19,11 @@
     或放 app_icon.png（已装 Pillow 时自动转多尺寸 .ico：16~256）；
     自动接入 exe 图标与 Inno 安装向导图标，缺失则用默认图标不报错；
   · 本脚本仅生成产物，不修改源码；PyInstaller 未安装时给出友好提示。
+  · --protect 加壳（v1.20.0）：PyArmor 9 逐文件混淆源码后再交 PyInstaller，
+    发行包内 .pyc 均为密文，pyinstxtractor 提取后也无法反编译还原逻辑；
+    试用版许可限制单文件 32KB，超限文件（见 PROTECT_EXCLUDES）以普通字节码
+    随包——Python 3.14 字节码当前无可用公开反编译器，防护仍然有效；
+    购买 PyArmor 正式许可后清空 PROTECT_EXCLUDES 即可全量加壳。
 """
 
 from __future__ import annotations
@@ -54,6 +60,11 @@ EXCLUDES = [
 
 # 本文件位于 brighteye/tools/，项目根 = 上上级目录
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# PyArmor 试用版许可限制单文件 32KB，超限文件不混淆、以普通字节码随包
+# （pet.py 为立绘渲染 UI，核心算法均在 32KB 以下、全部加壳覆盖）
+PROTECT_EXCLUDES = ["brighteye/ui/pet.py"]
+OBF_DIR = "build_obf"          # 混淆产物暂存目录（.gitignore 排除）
 
 ISS_TEMPLATE = r"""; 宸观 BrightEye · Inno Setup 安装包脚本（由 build_exe.py 生成）
 ; 编译方式：安装 Inno Setup 6 (https://jrsoftware.org/isinfo.php)
@@ -236,39 +247,91 @@ def compile_installer(iss_path: str) -> int:
     return ret
 
 
-def build(version: str) -> int:
+def obfuscate() -> str:
+    """PyArmor 逐文件混淆 brighteye 包 → ROOT/build_obf/，返回混淆目录。
+
+    产物结构：build_obf/brighteye/（密文源码）+ build_obf/pyarmor_runtime_xxx/
+    （解密运行时 .pyd）。超 32KB 的 PROTECT_EXCLUDES 文件原样拷入（随包时仍
+    编成 Python 3.14 字节码，当前无公开反编译器可还原）。"""
+    try:
+        import pyarmor  # noqa: F401
+    except ImportError:
+        print("[错误] 未安装 PyArmor：pip install pyarmor")
+        raise SystemExit(2)
+
+    obf = os.path.join(ROOT, OBF_DIR)
+    if os.path.isdir(obf):
+        shutil.rmtree(obf)
+    cmd = [sys.executable, "-m", "pyarmor.cli", "gen", "-O", obf, "-r"]
+    for pat in PROTECT_EXCLUDES:
+        cmd += ["--exclude", pat]
+    cmd.append("brighteye")
+    print("[加壳]", " ".join(cmd))
+    if subprocess.call(cmd, cwd=ROOT) != 0:
+        print("[错误] PyArmor 混淆失败")
+        raise SystemExit(3)
+    # 被排除的超限文件原样补拷（保证包完整可导入）
+    for rel in PROTECT_EXCLUDES:
+        src = os.path.join(ROOT, rel.replace("/", os.sep))
+        dst = os.path.join(obf, rel.replace("/", os.sep))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+    runtime = [d for d in os.listdir(obf) if d.startswith("pyarmor_runtime")]
+    print(f"[加壳] 完成：{obf}（运行时 {runtime}）")
+    return obf
+
+
+def build(version: str, protect: bool = False) -> int:
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
         print("[错误] 未安装 PyInstaller：pip install pyinstaller")
         return 2
 
-    entry_path = os.path.join(ROOT, ENTRY)
+    # 加壳模式：PyInstaller 的工作目录切到混淆目录，import brighteye 即
+    # 解析到密文版；普通模式维持项目根。dist/build 输出路径固定在项目根。
+    work_root = obfuscate() if protect else ROOT
+    entry_path = os.path.join(work_root, ENTRY)
     with open(entry_path, "w", encoding="utf-8") as f:
         f.write(ENTRY_CODE)
 
     sep = ";" if os.name == "nt" else ":"
     icon = prepare_icon()
+    assets_src = os.path.join(ROOT, "brighteye", "assets")   # 资源始终取真身
+    runtime_pkgs = []
+    if protect:
+        runtime_pkgs = [d for d in os.listdir(work_root)
+                        if d.startswith("pyarmor_runtime")]
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean", "--windowed",
         "--name", APP_NAME,
+        "--distpath", os.path.join(ROOT, "dist"),
+        "--workpath", os.path.join(ROOT, "build"),
+        "--specpath", work_root,
         *(["--icon", icon] if icon else []),
         # 资源：模型 + 立绘整体随包
-        "--add-data", f"brighteye/assets{sep}brighteye/assets",
+        "--add-data", f"{assets_src}{sep}brighteye/assets",
         # mediapipe 的模型/动态库必须 collect-all，否则运行时缺文件
         "--collect-all", "mediapipe",
         "--collect-all", "cv2",
         # 多进程子进程入口（spawn）需显式收模块
         "--hidden-import", "brighteye.vision.worker",
+        # 加壳后 import 语句藏于密文，静态分析不可见 → 必须整包强制收入，
+        # 否则冻结包缺 brighteye.config 等子模块（ModuleNotFoundError）
+        *(["--collect-submodules", "brighteye"] if protect else []),
+        # 加壳解密运行时（.pyd）必须整包收入
+        *(arg for pkg in runtime_pkgs
+          for arg in ("--collect-all", pkg)),
         # 排除误收的重型库（见文件头 EXCLUDES 说明）
         *(arg for mod in EXCLUDES for arg in ("--exclude-module", mod)),
         ENTRY,
     ]
     print("[打包]", " ".join(cmd))
-    ret = subprocess.call(cmd, cwd=ROOT)
+    ret = subprocess.call(cmd, cwd=work_root)
     if ret == 0:
-        print(f"\n[完成] dist/{APP_NAME}/{APP_NAME}.exe")
+        print(f"\n[完成] dist/{APP_NAME}/{APP_NAME}.exe"
+              + ("（已加壳防逆向）" if protect else ""))
         iss = write_iss(version, icon)
         print(f"[提示] Inno Setup 脚本: {iss}")
         ret = compile_installer(iss)   # 装了 Inno Setup 就顺手编出 setup.exe
@@ -279,12 +342,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="宸观 BrightEye 一键打包")
     parser.add_argument("--iss-only", action="store_true",
                         help="只生成 Inno Setup 脚本，不执行 PyInstaller")
+    parser.add_argument("--protect", action="store_true",
+                        help="先 PyArmor 加壳混淆源码再打包（防逆向）")
     args = parser.parse_args()
     version = _version()
     if args.iss_only:
         print("[生成]", write_iss(version, prepare_icon()))
         return
-    sys.exit(build(version))
+    sys.exit(build(version, protect=args.protect))
 
 
 if __name__ == "__main__":

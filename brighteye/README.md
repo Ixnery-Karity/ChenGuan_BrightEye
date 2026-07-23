@@ -1,4 +1,4 @@
-# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.19.0）
+# 宸观 BrightEye · 宸宇护目，智能时长管控护眼伴侣系统（参赛原型 Demo · v1.20.0）
 
 > 开源仓库：<https://github.com/Ixnery-Karity/ChenGuan_BrightEye>（仅软件代码，
 > 不含商业计划书等竞赛文档与演示包）。
@@ -28,8 +28,11 @@
 ### 完整安装包（v1.17.0 · 软件成品形态）
 
 - 运行 `python -m brighteye.tools.build_exe` 一键产出
-  **`dist_installer/宸观BrightEye_Setup_v1.17.0-demo.exe`** 中文安装向导
+  **`dist_installer/宸观BrightEye_Setup_v<版本>.exe`** 中文安装向导
   （PyInstaller onedir 打包后自动调用 Inno Setup 编译）。
+- **加壳防逆向（v1.20.0）**：加 `--protect` 参数即先经 **PyArmor 9** 逐文件
+  混淆源码再打包，发行包内核心算法（监测/情绪/守护/人格/聊天/报告）均为
+  密文，提取 `.pyc` 亦无法反编译还原；正式发布的 Release 产物均以此模式构建。
 - 免管理员安装（默认装到 `%LOCALAPPDATA%\Programs`），自动创建桌面/
   开始菜单快捷方式；安装版**自带 Python 运行时**免环境双击即用（天然无
   Python 版本冲突），用户数据与报告按 Windows 惯例落

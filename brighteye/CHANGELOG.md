@@ -5,6 +5,24 @@
 
 ---
 
+## v1.20.0-demo — 2026-07-23
+
+### 变更（发行包加壳防逆向 · PyArmor 混淆管线，2026-07-23）
+- **`tools/build_exe.py` 新增 `--protect` 加壳模式**：PyArmor 9（Python 3.14
+  官方支持）逐文件混淆 `brighteye` 包源码后再交 PyInstaller 打包——
+  发行包内核心代码均为密文，`pyinstxtractor` 提取后亦无法反编译还原逻辑：
+  - 混淆产物暂存 `build_obf/`（含 `pyarmor_runtime` 解密运行时 .pyd，
+    随包 `--collect-all` 收入）；
+  - 试用许可限制单文件 32KB，超限的 `ui/pet.py`（立绘渲染 UI，非核心
+    算法）以普通字节码随包——Python 3.14 字节码当前无公开反编译器，
+    防护依然有效；购买正式许可后清空 `PROTECT_EXCLUDES` 即全量加壳；
+  - 监测/情绪/守护/人格/聊天/报告等核心算法全部在加壳覆盖范围内。
+- 发布纪律调整：**GitHub Release 产物由源码 zip 改为加壳安装包/绿色包**，
+  源码 zip 归档不再随 Release 分发。
+- 版本号提升至 1.20.0-demo（config/README 同步）。
+
+---
+
 ## v1.19.0-demo — 2026-07-23
 
 ### 变更（弥悠官方皮肤重制 v4 · 图生图高保真 + 全新技术文档，2026-07-23）
